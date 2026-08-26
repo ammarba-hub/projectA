@@ -8,8 +8,9 @@ st.title("Project Alyson")
 
 @st.cache_data
 def load_and_process_data(file):
-    # Use the memory-efficient pyarrow engine
-    df = pd.read_csv(file, dtype=str, engine='pyarrow')
+    # Removed strict pyarrow engine. Added low_memory=False and on_bad_lines='skip' 
+    # to safely parse messy text, line breaks, and commas inside agent notes.
+    df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
     
     # Calculate the SLA Check column automatically
     if 'SLA Check' not in df.columns:
