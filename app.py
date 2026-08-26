@@ -36,7 +36,7 @@ def load_and_process_data(file):
     return df
 
 # --- 1. FILE UPLOAD ---
-uploaded_file = st.file_uploader("📁 Step 1: Upload your Master CSV", type=["csv"])
+uploaded_file = st.file_uploader("📁 Step 1: Upload "Tracked Rewards Export" file shared by John. Make sure you already converted the file to CSV format", type=["csv"])
 
 if uploaded_file:
     with st.spinner("Reading data and calculating SLAs... (This takes a moment)"):
