@@ -121,7 +121,7 @@ if uploaded_file:
                     return 'Wellcome Vouchers'
                  elif 'HKTVMall' in name_str or 'HKTVmall' in name_str:
                     return 'HKTVMall Vouchers'
-                elif 'Apple iPad 11-inch (A16)' in name_str or 'iPad Pro 11-inch' in name_str:
+                elif 'Apple iPad 11-inch (A16)' in name_str or 'iPad Pro 11-inch' in name_str or '11 inch iPad' in name_str:
                     return 'Apple iPad 11-inch (A16)'
                 elif 'DELONGHI DEDICA DUO' in name_str or 'DELONGHIDEDICA DUO' in name_str:
                     return 'Delonghi Dedica Duo EC890'
@@ -133,7 +133,7 @@ if uploaded_file:
                     return 'Delsey 30" GRENELLE SE'
                 elif 'Cash Rebate' in name_str:
                     return 'FPS Cash'
-                elif 'LOJEL Cubo' in name_str:
+                elif 'LOJEL Cubo' in name_str or 'LOJEL CUBO' in name_str:
                     return 'LOJEL Cubo'
                 elif 'PHILIPS ADD6920 RO Water Dispenser' in name_str or 'Philips ADD6920' in name_str:
                     return 'Philips ADD6920 RO Water Dispenser'
