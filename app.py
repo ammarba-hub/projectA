@@ -1,15 +1,21 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import gc
 
 # Configure the web page
 st.set_page_config(page_title="Bulk Lookup & SLA Tool", layout="wide")
 st.title("Project Alyson")
 
-@st.cache_data
+# FIX 1: Change to cache_resource. This stops Streamlit from duplicating 
+# the massive dataframe in memory on every button click.
+@st.cache_resource
 def load_and_process_data(file):
-    # Use low_memory=False and skip bad lines to prevent parser crashes
     df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
+    
+    # FIX 2: Pre-clean the leadId column here so it doesn't consume memory during the search
+    if 'leadId' in df.columns:
+        df['leadId'] = df['leadId'].fillna('').astype(str).str.strip()
     
     # Calculate the SLA Check column automatically
     if 'SLA Check' not in df.columns:
@@ -27,6 +33,10 @@ def load_and_process_data(file):
         choices = ['FLT Passed SLA', 'ELT Passed SLA']
         
         df['SLA Check'] = np.select(conditions, choices, default='')
+        
+        # FIX 3: Immediately delete heavy temporary variables to free up RAM
+        del today, fb_date, created_date, days_since_fb, days_since_created, conditions, choices
+        gc.collect()
         
     return df
 
@@ -60,22 +70,19 @@ if uploaded_file:
                 if not search_list or not selected_cols:
                     st.warning("⚠️ Please paste at least one valid leadId AND select at least one column.")
                 else:
-                    # Safely fill NaN values in leadId before searching to prevent null-value crashes
-                    search_results = df[df['leadId'].fillna('').isin(search_list)][selected_cols]
+                    # We no longer need .fillna('') here since we handled it in the cached function
+                    search_results = df[df['leadId'].isin(search_list)][selected_cols]
                     
-                    # Handle the case where no matches are found
                     if search_results.empty:
-                        st.error("❌ No matches found! Double check your leadIds. Make sure they do not contain typos or invalid characters.")
+                        st.error("❌ No matches found! Double check your leadIds.")
                     else:
                         st.write(f"✅ Found {len(search_results):,} matches!")
                         st.write("👀 **Here is a preview of the first 10 rows:**")
                         
-                        # LIMIT DISPLAY TO 10 ROWS to prevent the browser from crashing
                         st.dataframe(search_results.head(10))
                         
                         st.caption("Note: Click download to get all of your matched records.")
                         
-                        # The download button still contains ALL results, not just the 10 previewed
                         csv = search_results.to_csv(index=False).encode('utf-8')
                         st.download_button(
                             label="📥 Download Full CSV",
@@ -91,19 +98,15 @@ if uploaded_file:
             # --- ELT List ---
             st.subheader("ELT Passed SLA Records")
             
-            # 1. Extract the full data (This is held in the background for the download)
             elt_passed_df = df[df['SLA Check'] == 'ELT Passed SLA'][['referenceId.ns', 'lead.createdAt', 'leadId']]
             
-            # 2. Create a summary for the screen (Group by referenceId.ns and count leadIds)
             elt_summary_df = elt_passed_df.groupby('referenceId.ns', as_index=False).agg(
                 Number_of_leadIds=('leadId', 'count')
             )
             
-            # 3. Display the summary table
             st.write("👀 **Preview:** (Total leads per Reference ID)")
             st.dataframe(elt_summary_df)
             
-            # 4. Keep the download button linked to the FULL dataframe
             st.caption("Note: The downloaded file contains all details (referenceId.ns, lead.createdAt, leadId).")
             elt_csv = elt_passed_df.to_csv(index=False).encode('utf-8')
             st.download_button(
@@ -113,18 +116,15 @@ if uploaded_file:
                 mime="text/csv"
             )
             
-            st.divider() # Clean visual line
+            st.divider() 
             
             # --- FLT List ---
             st.subheader("FLT Passed SLA Records")
             
-            # 1. Extract the full data (use .copy() to safely add temporary columns)
             flt_passed_df = df[df['SLA Check'] == 'FLT Passed SLA'][['offerName', 'leadId', 'providerFeedbackDate']].copy()
             
-            # 2. Create a rule to group similar offer names
             def group_offer_names(name):
                 name_str = str(name)
-                # You can add as many keyword rules here as you need!
                 if 'Apple Store Gift Card' in name_str:
                     return 'Apple Store Gift Card'
                 elif 'Wellcome' in name_str:
@@ -148,27 +148,21 @@ if uploaded_file:
                 elif 'PHILIPS ADD6920 RO Water Dispenser' in name_str or 'Philips ADD6920' in name_str:
                     return 'Philips ADD6920 RO Water Dispenser'
                 else:
-                    return name_str # Keep the original name if no keywords match
+                    return name_str 
 
-            # Apply the rules to create a clean grouping column
             flt_passed_df['Preview Group'] = flt_passed_df['offerName'].apply(group_offer_names)
             
-            # 3. Create a summary for the screen
             flt_summary_df = flt_passed_df.groupby('Preview Group', as_index=False).agg(
                 Number_of_leadIds=('leadId', 'count')
             )
             
-            # Rename the column for a cleaner presentation
             flt_summary_df = flt_summary_df.rename(columns={'Preview Group': 'offerName (Grouped)'})
             
-            # 4. Display the summary table
             st.write("👀 **Preview:** (Total leads per Reward Category)")
             st.dataframe(flt_summary_df)
             
-            # 5. Keep the download button linked to the FULL detailed dataframe
             st.caption("Note: The downloaded file contains all details (original offerName, leadId, providerFeedbackDate).")
             
-            # We drop the temporary 'Preview Group' column before downloading so the CSV stays clean
             flt_csv = flt_passed_df.drop(columns=['Preview Group']).to_csv(index=False).encode('utf-8')
             
             st.download_button(
