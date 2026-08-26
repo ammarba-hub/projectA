@@ -64,11 +64,13 @@ if uploaded_file:
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=['leadId', 'SLA Check'])
             
             if st.button("🔍 Search & Preview", type="primary"):
-                # .strip() on the outside removes accidental blank spaces at the very bottom of the box, # but keeps all dashes and blanks in the middle so your row count stays perfectly aligned!
-            search_list = [x.strip() for x in paste_area.strip().split('\n')]
+                # Clean the pasted list: .strip() on the outside removes accidental blank spaces 
+                # at the very bottom, but keeps dashes/blanks in the middle for 1:1 VLOOKUP parity!
+                search_list = [x.strip() for x in paste_area.strip().split('\n')]
                 
-                if not search_list or not selected_cols:
-                    st.warning("⚠️ Please paste at least one valid leadId AND select at least one column.")
+                # Check if the text box is completely empty
+                if not paste_area.strip() or not selected_cols:
+                    st.warning("⚠️ Please paste at least one leadId AND select at least one column.")
                 else:
                     # 1. Create a dataframe from the exact IDs the user searched for
                     search_df = pd.DataFrame({'leadId': search_list})
@@ -79,7 +81,7 @@ if uploaded_file:
                     # 3. Extract only the actual matches from the master file to save memory
                     matched_df = df[df['leadId'].isin(search_list)][cols_to_pull]
                     
-                    # 4. LEFT JOIN: This keeps every ID the user pasted, even if it has no match in matched_df
+                    # 4. LEFT JOIN: This keeps every ID the user pasted, even if it has no match
                     merged_results = pd.merge(search_df, matched_df, on='leadId', how='left')
                     
                     # 5. Fill the empty cells for missing matches with "No match found"
