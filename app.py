@@ -70,26 +70,39 @@ if uploaded_file:
                 if not search_list or not selected_cols:
                     st.warning("⚠️ Please paste at least one valid leadId AND select at least one column.")
                 else:
-                    # We no longer need .fillna('') here since we handled it in the cached function
-                    search_results = df[df['leadId'].isin(search_list)][selected_cols]
+                    # 1. Create a dataframe from the exact IDs the user searched for
+                    search_df = pd.DataFrame({'leadId': search_list})
                     
-                    if search_results.empty:
-                        st.error("❌ No matches found! Double check your leadIds.")
-                    else:
-                        st.write(f"✅ Found {len(search_results):,} matches!")
-                        st.write("👀 **Here is a preview of the first 10 rows:**")
-                        
-                        st.dataframe(search_results.head(10))
-                        
-                        st.caption("Note: Click download to get all of your matched records.")
-                        
-                        csv = search_results.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Download Full CSV",
-                            data=csv,
-                            file_name="Lookup_Results.csv",
-                            mime="text/csv",
-                        )
+                    # 2. Ensure 'leadId' is included in the extraction so we can merge on it
+                    cols_to_pull = list(set(selected_cols + ['leadId']))
+                    
+                    # 3. Extract only the actual matches from the master file to save memory
+                    matched_df = df[df['leadId'].isin(search_list)][cols_to_pull]
+                    
+                    # 4. LEFT JOIN: This keeps every ID the user pasted, even if it has no match in matched_df
+                    merged_results = pd.merge(search_df, matched_df, on='leadId', how='left')
+                    
+                    # 5. Fill the empty cells for missing matches with "No match found"
+                    cols_to_fill = [col for col in selected_cols if col != 'leadId']
+                    merged_results[cols_to_fill] = merged_results[cols_to_fill].fillna('No match found')
+                    
+                    # 6. Restore the final visual order to exactly what the user selected in the dropdown
+                    final_results = merged_results[selected_cols]
+                    
+                    st.write(f"✅ Processed {len(search_list):,} searched IDs!")
+                    st.write("👀 **Here is a preview of the first 10 rows:**")
+                    
+                    st.dataframe(final_results.head(10))
+                    
+                    st.caption("Note: Click download to get all of your records, including the 'No match found' ones.")
+                    
+                    csv = final_results.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Full CSV",
+                        data=csv,
+                        file_name="Lookup_Results.csv",
+                        mime="text/csv",
+                    )
 
         # --- TAB 2: SLA EXPORT FLOW ---
         with tab2:
