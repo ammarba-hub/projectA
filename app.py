@@ -8,8 +8,7 @@ st.title("Project Alyson")
 
 @st.cache_data
 def load_and_process_data(file):
-    # Removed strict pyarrow engine. Added low_memory=False and on_bad_lines='skip' 
-    # to safely parse messy text, line breaks, and commas inside agent notes.
+    # Use low_memory=False and skip bad lines to prevent parser crashes
     df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
     
     # Calculate the SLA Check column automatically
@@ -55,29 +54,35 @@ if uploaded_file:
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=['leadId', 'SLA Check'])
             
             if st.button("🔍 Search & Preview", type="primary"):
-                search_list = [x.strip() for x in paste_area.split('\n') if x.strip()]
+                # Clean the pasted list: ignore empty lines and pure dashes
+                search_list = [x.strip() for x in paste_area.split('\n') if x.strip() and x.strip() != "-"]
                 
                 if not search_list or not selected_cols:
-                    st.warning("⚠️ Please paste at least one leadId AND select at least one column.")
+                    st.warning("⚠️ Please paste at least one valid leadId AND select at least one column.")
                 else:
-                    search_results = df[df['leadId'].isin(search_list)][selected_cols]
+                    # Safely fill NaN values in leadId before searching to prevent null-value crashes
+                    search_results = df[df['leadId'].fillna('').isin(search_list)][selected_cols]
                     
-                    st.write(f"✅ Found {len(search_results):,} matches!")
-                    st.write("👀 **Here is a preview of the first 10 rows:**")
-                    
-                    # LIMIT DISPLAY TO 10 ROWS to prevent the browser from crashing
-                    st.dataframe(search_results.head(10))
-                    
-                    st.caption("Note: Click download to get all of your matched records.")
-                    
-                    # The download button still contains ALL results, not just the 10 previewed
-                    csv = search_results.to_csv(index=False).encode('utf-8')
-                    st.download_button(
-                        label="📥 Download Full CSV",
-                        data=csv,
-                        file_name="Lookup_Results.csv",
-                        mime="text/csv",
-                    )
+                    # Handle the case where no matches are found
+                    if search_results.empty:
+                        st.error("❌ No matches found! Double check your leadIds. Make sure they do not contain typos or invalid characters.")
+                    else:
+                        st.write(f"✅ Found {len(search_results):,} matches!")
+                        st.write("👀 **Here is a preview of the first 10 rows:**")
+                        
+                        # LIMIT DISPLAY TO 10 ROWS to prevent the browser from crashing
+                        st.dataframe(search_results.head(10))
+                        
+                        st.caption("Note: Click download to get all of your matched records.")
+                        
+                        # The download button still contains ALL results, not just the 10 previewed
+                        csv = search_results.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download Full CSV",
+                            data=csv,
+                            file_name="Lookup_Results.csv",
+                            mime="text/csv",
+                        )
 
         # --- TAB 2: SLA EXPORT FLOW ---
         with tab2:
