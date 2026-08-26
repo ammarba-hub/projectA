@@ -3,17 +3,13 @@ import pandas as pd
 import numpy as np
 import gc
 
-# Configure the web page
 st.set_page_config(page_title="Bulk Lookup & SLA Tool", layout="wide")
 st.title("Project Alyson")
 
-# FIX 1: Change to cache_resource. This stops Streamlit from duplicating 
-# the massive dataframe in memory on every button click.
 @st.cache_resource
 def load_and_process_data(file):
     df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
     
-    # FIX 2: Pre-clean the leadId column here so it doesn't consume memory during the search
     if 'leadId' in df.columns:
         df['leadId'] = df['leadId'].fillna('').astype(str).str.strip()
     
@@ -34,7 +30,6 @@ def load_and_process_data(file):
         
         df['SLA Check'] = np.select(conditions, choices, default='')
         
-        # FIX 3: Immediately delete heavy temporary variables to free up RAM
         del today, fb_date, created_date, days_since_fb, days_since_created, conditions, choices
         gc.collect()
         
@@ -52,7 +47,6 @@ if uploaded_file:
     else:
         st.success(f"✅ Success! Loaded {len(df):,} rows.")
         
-        # Create two separate tabs for your flows
         tab1, tab2 = st.tabs(["🔍 Search by leadId", "📈 SLA Reports"])
         
         # --- TAB 1: SEARCH FLOW ---
@@ -61,44 +55,34 @@ if uploaded_file:
             with col1:
                 paste_area = st.text_area("Paste your leadIds here (one per line):", height=200)
             with col2:
-                # Set up the requested default columns
                 desired_defaults = [
                     'leadId', 'referenceId.ns', 'application.entry.status', 'operationStatus', 
                     'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
                     'offerName', 'providerFeedbackDate', 'SLA Check'
                 ]
                 
-                # Safety check: Only apply defaults that actually exist in the uploaded CSV
                 actual_defaults = [col for col in desired_defaults if col in df.columns]
                 
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=actual_defaults)
             
             if st.button("🔍 Search & Preview", type="primary"):
-                # Clean the pasted list: .strip() on the outside removes accidental blank spaces 
-                # at the very bottom, but keeps dashes/blanks in the middle for 1:1 VLOOKUP parity!
+             
                 search_list = [x.strip() for x in paste_area.strip().split('\n')]
                 
-                # Check if the text box is completely empty
                 if not paste_area.strip() or not selected_cols:
                     st.warning("⚠️ Please paste at least one leadId AND select at least one column.")
                 else:
-                    # 1. Create a dataframe from the exact IDs the user searched for
                     search_df = pd.DataFrame({'leadId': search_list})
-                    
-                    # 2. Ensure 'leadId' is included in the extraction so we can merge on it
+              
                     cols_to_pull = list(set(selected_cols + ['leadId']))
-                    
-                    # 3. Extract only the actual matches from the master file to save memory
+                   
                     matched_df = df[df['leadId'].isin(search_list)][cols_to_pull]
-                    
-                    # 4. LEFT JOIN: This keeps every ID the user pasted, even if it has no match
+                   
                     merged_results = pd.merge(search_df, matched_df, on='leadId', how='left')
-                    
-                    # 5. Fill the empty cells for missing matches with "No match found"
+                  
                     cols_to_fill = [col for col in selected_cols if col != 'leadId']
                     merged_results[cols_to_fill] = merged_results[cols_to_fill].fillna('No match found')
-                    
-                    # 6. Restore the final visual order to exactly what the user selected in the dropdown
+                  
                     final_results = merged_results[selected_cols]
                     
                     st.write(f"✅ Processed {len(search_list):,} searched IDs!")
@@ -128,8 +112,7 @@ if uploaded_file:
             elt_summary_df = elt_passed_df.groupby('referenceId.ns', as_index=False).agg(
                 Number_of_leadIds=('leadId', 'count')
             )
-            
-            # Sort highest to lowest
+
             elt_summary_df = elt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reference ID)")
@@ -185,8 +168,7 @@ if uploaded_file:
             )
             
             flt_summary_df = flt_summary_df.rename(columns={'Preview Group': 'offerName (Grouped)'})
-            
-            # Sort highest to lowest
+
             flt_summary_df = flt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reward Category)")
