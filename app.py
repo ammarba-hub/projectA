@@ -4,7 +4,7 @@ import numpy as np
 
 # Configure the web page
 st.set_page_config(page_title="Bulk Lookup & SLA Tool", layout="wide")
-st.title("📊 Bulk Lookup & SLA Tool")
+st.title("Project Alyson")
 
 # CACHING: This tells the website to remember the 200MB file after it loads once, 
 # so clicking "Search" is instantaneous.
@@ -131,8 +131,8 @@ if uploaded_file:
                     return 'FPS Cash'
                 elif 'LOJEL Cubo' in name_str:
                     return 'LOJEL Cubo'
-                elif 'PHILIPS ADD6920 RO Water Dispenser' in name_str:
-                    return 'PHILIPS ADD6920 RO Water Dispenser'
+                elif 'PHILIPS ADD6920 RO Water Dispenser' in name_str or 'Philips ADD6920' in name_str:
+                    return 'Philips ADD6920 RO Water Dispenser'
                 else:
                     return name_str # Keep the original name if no keywords match
 
