@@ -117,6 +117,10 @@ if uploaded_file:
                 # You can add as many keyword rules here as you need!
                 if 'Apple Store Gift Card' in name_str:
                     return 'Apple Store Gift Card'
+                elif 'Wellcome' in name_str:
+                    return 'Wellcome Vouchers'
+                 elif 'HKTVMall' in name_str or 'HKTVmall' in name_str:
+                    return 'HKTVMall Vouchers'
                 elif 'Apple iPad 11-inch (A16)' in name_str or 'iPad Pro 11-inch' in name_str:
                     return 'Apple iPad 11-inch (A16)'
                 elif 'DELONGHI DEDICA DUO' in name_str or 'DELONGHIDEDICA DUO' in name_str:
