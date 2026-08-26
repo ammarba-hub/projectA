@@ -105,7 +105,7 @@ if uploaded_file:
             
             st.divider() # Clean visual line
             
-           # --- FLT List ---
+            # --- FLT List ---
             st.subheader("FLT Passed SLA Records")
             
             # 1. Extract the full data (use .copy() to safely add temporary columns)
@@ -121,9 +121,9 @@ if uploaded_file:
                     return 'Apple iPad'
                 elif 'DELONGHI DEDICA DUO' in name_str:
                     return 'Delonghi Dedica Duo EC890'
-                 elif 'DYSON HD19 Hair Dryer' in name_str:
+                elif 'DYSON HD19 Hair Dryer' in name_str:
                     return 'Dyson HD19 Hair Dryer'
-                 elif 'Delsey 30" GRENELLE SE' in name_str:
+                elif 'Delsey 30" GRENELLE SE' in name_str:
                     return 'Delsey 30" GRENELLE SE'
                 elif 'Cash Rebate' in name_str:
                     return 'FPS Cash'
