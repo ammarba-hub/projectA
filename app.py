@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import gc
 
-st.set_page_config(page_title="Bulk Lookup & SLA Tool", layout="wide")
+st.set_page_config(page_title="Project Alyson", layout="wide")
 st.title("Project Alyson")
 
 @st.cache_resource
