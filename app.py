@@ -64,8 +64,8 @@ if uploaded_file:
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=['leadId', 'SLA Check'])
             
             if st.button("🔍 Search & Preview", type="primary"):
-                # Clean the pasted list: ignore empty lines and pure dashes
-                search_list = [x.strip() for x in paste_area.split('\n') if x.strip() and x.strip() != "-"]
+                # .strip() on the outside removes accidental blank spaces at the very bottom of the box, # but keeps all dashes and blanks in the middle so your row count stays perfectly aligned!
+            search_list = [x.strip() for x in paste_area.strip().split('\n')]
                 
                 if not search_list or not selected_cols:
                     st.warning("⚠️ Please paste at least one valid leadId AND select at least one column.")
