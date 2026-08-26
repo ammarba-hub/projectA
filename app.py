@@ -53,7 +53,7 @@ if uploaded_file:
             with col2:
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=['leadId', 'SLA Check'])
             
-           if st.button("🔍 Search & Preview", type="primary"):
+            if st.button("🔍 Search & Preview", type="primary"):
                 search_list = [x.strip() for x in paste_area.split('\n') if x.strip()]
                 
                 if not search_list or not selected_cols:
