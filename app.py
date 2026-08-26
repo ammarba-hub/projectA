@@ -121,7 +121,7 @@ if uploaded_file:
                     return 'Apple iPad'
                 elif 'DELONGHI DEDICA DUO' in name_str:
                     return 'Delonghi Dedica Duo EC890'
-                 elif 'DYSON HD19' in name_str:
+                 elif 'DYSON HD19 Hair Dryer' in name_str:
                     return 'Dyson HD19 Hair Dryer'
                  elif 'Delsey 30" GRENELLE SE' in name_str:
                     return 'Delsey 30" GRENELLE SE'
