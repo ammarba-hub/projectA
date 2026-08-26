@@ -61,7 +61,17 @@ if uploaded_file:
             with col1:
                 paste_area = st.text_area("Paste your leadIds here (one per line):", height=200)
             with col2:
-                selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=['leadId', 'SLA Check'])
+                # Set up the requested default columns
+                desired_defaults = [
+                    'leadId', 'referenceId.ns', 'application.entry.status', 'operationStatus', 
+                    'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
+                    'offerName', 'providerFeedbackDate', 'SLA Check'
+                ]
+                
+                # Safety check: Only apply defaults that actually exist in the uploaded CSV
+                actual_defaults = [col for col in desired_defaults if col in df.columns]
+                
+                selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=actual_defaults)
             
             if st.button("🔍 Search & Preview", type="primary"):
                 # Clean the pasted list: .strip() on the outside removes accidental blank spaces 
@@ -119,6 +129,9 @@ if uploaded_file:
                 Number_of_leadIds=('leadId', 'count')
             )
             
+            # Sort highest to lowest
+            elt_summary_df = elt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
+            
             st.write("👀 **Preview:** (Total leads per Reference ID)")
             st.dataframe(elt_summary_df)
             
@@ -172,6 +185,9 @@ if uploaded_file:
             )
             
             flt_summary_df = flt_summary_df.rename(columns={'Preview Group': 'offerName (Grouped)'})
+            
+            # Sort highest to lowest
+            flt_summary_df = flt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reward Category)")
             st.dataframe(flt_summary_df)
