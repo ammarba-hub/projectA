@@ -117,12 +117,14 @@ if uploaded_file:
                 # You can add as many keyword rules here as you need!
                 if 'Apple Store Gift Card' in name_str:
                     return 'Apple Store Gift Card'
-                elif 'Apple iPad' in name_str:
-                    return 'Apple iPad'
-                elif 'DELONGHI DEDICA DUO' in name_str:
+                elif 'Apple iPad 11-inch (A16)' in name_str or 'iPad Pro 11-inch' in name_str:
+                    return 'Apple iPad 11-inch (A16)'
+                elif 'DELONGHI DEDICA DUO' in name_str or 'DELONGHIDEDICA DUO' in name_str:
                     return 'Delonghi Dedica Duo EC890'
-                elif 'DYSON HD19 Hair Dryer' in name_str:
+                elif 'DYSON HD19' in name_str:
                     return 'Dyson HD19 Hair Dryer'
+                elif 'DYSON HD16' in name_str:
+                    return 'Dyson HD16 Hair Dryer'
                 elif 'Delsey 30" GRENELLE SE' in name_str:
                     return 'Delsey 30" GRENELLE SE'
                 elif 'Cash Rebate' in name_str:
