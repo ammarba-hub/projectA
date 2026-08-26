@@ -78,20 +78,74 @@ if uploaded_file:
         with tab2:
             st.write("Extract records based on SLA Check status.")
             
-            # ELT List
+            # --- ELT List ---
             st.subheader("ELT Passed SLA Records")
+            
+            # 1. Extract the full data (This is held in the background for the download)
             elt_passed_df = df[df['SLA Check'] == 'ELT Passed SLA'][['referenceId.ns', 'lead.createdAt', 'leadId']]
-            st.dataframe(elt_passed_df)
             
+            # 2. Create a summary for the screen (Group by referenceId.ns and count leadIds)
+            elt_summary_df = elt_passed_df.groupby('referenceId.ns', as_index=False).agg(
+                Number_of_leadIds=('leadId', 'count')
+            )
+            
+            # 3. Display the summary table
+            st.write("👀 **Preview:** (Total leads per Reference ID)")
+            st.dataframe(elt_summary_df)
+            
+            # 4. Keep the download button linked to the FULL dataframe
+            st.caption("Note: The downloaded file contains all details (referenceId.ns, lead.createdAt, leadId).")
             elt_csv = elt_passed_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download ELT List", data=elt_csv, file_name="elt_passed_sla_list.csv", mime="text/csv")
+            st.download_button(
+                label="📥 Download Full ELT List", 
+                data=elt_csv, 
+                file_name="elt_passed_sla_list.csv", 
+                mime="text/csv"
+            )
             
-            st.divider() # Adds a clean visual line between the two sections
+            st.divider() # Clean visual line
             
-            # FLT List
+           # --- FLT List ---
             st.subheader("FLT Passed SLA Records")
-            flt_passed_df = df[df['SLA Check'] == 'FLT Passed SLA'][['offerName', 'leadId', 'providerFeedbackDate']]
-            st.dataframe(flt_passed_df)
             
-            flt_csv = flt_passed_df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download FLT List", data=flt_csv, file_name="flt_passed_sla_list.csv", mime="text/csv")
+            # 1. Extract the full data (use .copy() to safely add temporary columns)
+            flt_passed_df = df[df['SLA Check'] == 'FLT Passed SLA'][['offerName', 'leadId', 'providerFeedbackDate']].copy()
+            
+            # 2. Create a rule to group similar offer names
+            def group_offer_names(name):
+                name_str = str(name)
+                # You can add as many keyword rules here as you need!
+                if 'Apple Store Gift Card' in name_str:
+                    return 'Apple Store Gift Card'
+                elif 'Touch \'n Go' in name_str:
+                    return 'TNG eWallet'
+                else:
+                    return name_str # Keep the original name if no keywords match
+
+            # Apply the rules to create a clean grouping column
+            flt_passed_df['Preview Group'] = flt_passed_df['offerName'].apply(group_offer_names)
+            
+            # 3. Create a summary for the screen
+            flt_summary_df = flt_passed_df.groupby('Preview Group', as_index=False).agg(
+                Number_of_leadIds=('leadId', 'count')
+            )
+            
+            # Rename the column for a cleaner presentation
+            flt_summary_df = flt_summary_df.rename(columns={'Preview Group': 'offerName (Grouped)'})
+            
+            # 4. Display the summary table
+            st.write("👀 **Preview:** (Total leads per Reward Category)")
+            st.dataframe(flt_summary_df)
+            
+            # 5. Keep the download button linked to the FULL detailed dataframe
+            st.caption("Note: The downloaded file contains all details (original offerName, leadId, providerFeedbackDate).")
+            
+            # We drop the temporary 'Preview Group' column before downloading so the CSV stays clean
+            flt_csv = flt_passed_df.drop(columns=['Preview Group']).to_csv(index=False).encode('utf-8')
+            
+            st.download_button(
+                label="📥 Download Full FLT List", 
+                data=flt_csv, 
+                file_name="flt_passed_sla_list.csv", 
+                mime="text/csv"
+            )
