@@ -274,15 +274,44 @@ if uploaded_file:
                             merged = merged.drop(columns=['leadId'])
                         merged = merged.reset_index(drop=True)
                             
-                        # 4. Interactive Mismatch Resolution
+                        # 4. Auto-Resolve Known Mismatches & Flag Unknowns
                         mismatch_indices = []
+                        
+                        # Dictionary for auto-resolutions (lowercase for robust matching)
+                        known_resolutions = {
+                            ('citi', 'citibank'): 'Citibank',
+                            ('uaf', 'ua'): 'UA',
+                            ('tiger', 'tiger brokers'): 'Tiger Brokers',
+                            ('longbrg', 'longbridge'): 'Longbridge',
+                            ('htsc', 'huatai'): 'Huatai',
+                            ('hase', 'hangseng'): 'HangSeng',
+                            ('dahsing', 'dah sing'): 'Dah Sing',
+                            ('citic', 'cncbi'): 'CNCBI'
+                        }
+                        
                         for idx, row in merged.iterrows():
-                            provider = str(row.get('Provider', '')).strip().lower()
-                            ref = str(row.get('referenceId.ns', '')).strip().lower()
+                            provider_raw = str(row.get('Provider', '')).strip()
+                            ref_raw = str(row.get('referenceId.ns', '')).strip()
                             
-                            # Only flag if both exist AND do not match
+                            provider = provider_raw.lower()
+                            ref = ref_raw.lower()
+                            
+                            # Only evaluate if they do not match AND we successfully looked up a reference ID
                             if provider != ref and ref != 'no match found' and ref != 'nan':
-                                mismatch_indices.append(idx)
+                                
+                                # Rule A: If Provider is entirely blank, adopt referenceId.ns silently
+                                if provider == '':
+                                    merged.at[idx, 'Provider'] = ref_raw
+                                    
+                                # Rule B: Check the known resolution dictionary
+                                elif (ref, provider) in known_resolutions:
+                                    resolved_val = known_resolutions[(ref, provider)]
+                                    merged.at[idx, 'Provider'] = resolved_val
+                                    merged.at[idx, 'referenceId.ns'] = resolved_val
+                                    
+                                # Rule C: Flag for manual human review
+                                else:
+                                    mismatch_indices.append(idx)
                                 
                         if mismatch_indices:
                             st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match.")
