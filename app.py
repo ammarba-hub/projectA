@@ -229,8 +229,21 @@ if uploaded_file:
                     valid_df = zd_df[~invalid_mask].copy()
                     
                     if not invalid_df.empty:
-                        st.warning(f"⚠️ Flagged {len(invalid_df)} entries with missing or invalid Leads IDs (e.g., dashes, text, or blanks).")
-                        st.dataframe(invalid_df)
+                        st.warning(f"⚠️ Flagged {len(invalid_df)} entries with missing or invalid Leads IDs.")
+                        
+                        # Set up two side-by-side columns for the display
+                        inv_col1, inv_col2 = st.columns([1, 2])
+                        
+                        with inv_col1:
+                            # Isolate just the ID column and rename it
+                            invalid_display = invalid_df[['ID']].rename(columns={'ID': 'Zendesk Ticket #'})
+                            st.dataframe(invalid_display, use_container_width=True)
+                            
+                        with inv_col2:
+                            st.write("📋 **Copy Zendesk Search Query:**")
+                            # Build the copyable string format: ticket_id:"123" ticket_id:"456"
+                            search_string = " ".join([f'ticket_id:"{tid}"' for tid in invalid_df['ID'].dropna()])
+                            st.code(search_string, language='text')
                         
                     if not valid_df.empty:
                         # 2. Split batched Leads IDs
