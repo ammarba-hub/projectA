@@ -358,7 +358,7 @@ if uploaded_file:
                                 
                             st.write("Expand a category below to copy the Zendesk query and download the ticket CSV for automated bulk solving.")
 
-                            # Helper function to generate UI for buckets 1-7
+                            # Helper function to generate UI for buckets 1-7 with full columns
                             def render_scenario(title, df_subset, file_key):
                                 if df_subset.empty:
                                     return
@@ -366,12 +366,11 @@ if uploaded_file:
                                 unique_tickets = df_subset['ID'].dropna().unique()
                                 
                                 with st.expander(f"{title} ({len(unique_tickets)} Tickets)"):
-                                    sc_col1, sc_col2 = st.columns([1, 2])
-                                    with sc_col1:
-                                        st.dataframe(pd.DataFrame({'Zendesk Ticket #': unique_tickets}), use_container_width=True)
-                                    with sc_col2:
-                                        st.write("📋 **Copy Zendesk Search Query:**")
-                                        st.code(" ".join([f'ticket_id:"{tid}"' for tid in unique_tickets]), language='text')
+                                    st.write("📋 **Copy Zendesk Search Query:**")
+                                    st.code(" ".join([f'ticket_id:"{tid}"' for tid in unique_tickets]), language='text')
+                                    
+                                    st.write("👀 **Preview:**")
+                                    st.dataframe(df_subset, use_container_width=True)
                                         
                                     csv_data = df_subset.to_csv(index=False).encode('utf-8')
                                     clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
