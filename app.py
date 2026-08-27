@@ -205,8 +205,8 @@ if uploaded_file:
 
         # --- TAB 3: BULK SOLVING FLOW ---
         with tab3:
-            st.write("Upload Support Team queue export to split grouped Leads IDs and cross-reference them with the Master CSV.")
-            zd_file = st.file_uploader("📁 Step 2: Upload Support Team queue CSV", type=["csv"], key="zd_upload")
+            st.write("Upload your ticketing system export to split grouped Leads IDs and cross-reference them with the Master CSV.")
+            zd_file = st.file_uploader("📁 Step 2: Upload Ticketing CSV", type=["csv"], key="zd_upload")
             
             if zd_file:
                 zd_df = pd.read_csv(zd_file, dtype=str)
@@ -223,7 +223,6 @@ if uploaded_file:
                     zd_df['Provider'] = zd_df['Provider'].fillna('').astype(str).str.strip()
                     
                     # 1. Identify invalid entries (Contains letters, blanks, dashes, etc.)
-                    # isdigit() only returns True if it's purely numbers. So it catches "-" and "" instantly.
                     invalid_mask = ~zd_df['Leads ID'].str.replace('000', '').str.isdigit()
                     invalid_df = zd_df[invalid_mask]
                     valid_df = zd_df[~invalid_mask].copy()
@@ -235,13 +234,11 @@ if uploaded_file:
                         inv_col1, inv_col2 = st.columns([1, 2])
                         
                         with inv_col1:
-                            # Isolate just the ID column and rename it
                             invalid_display = invalid_df[['ID']].rename(columns={'ID': 'Zendesk Ticket #'})
                             st.dataframe(invalid_display, use_container_width=True)
                             
                         with inv_col2:
-                            st.write("📋 **Zendesk Search Query:**")
-                            # Build the copyable string format: ticket_id:"123" ticket_id:"456"
+                            st.write("📋 **Copy Zendesk Search Query:**")
                             search_string = " ".join([f'ticket_id:"{tid}"' for tid in invalid_df['ID'].dropna()])
                             st.code(search_string, language='text')
                         
@@ -252,7 +249,6 @@ if uploaded_file:
                                 return [v for v in val.split('000') if v]
                             return [val]
                             
-                        # Apply split and explode into new rows
                         valid_df['Leads ID'] = valid_df['Leads ID'].apply(split_lead_ids)
                         valid_df = valid_df.explode('Leads ID')
                         
@@ -273,36 +269,65 @@ if uploaded_file:
                         for c in actual_master_cols:
                             merged[c] = merged[c].fillna('No match found')
                             
-                        # Drop duplicate leadId column from merge, keep visual order clean
+                        # Drop duplicate leadId column and reset index for perfect data mapping
                         if 'leadId' in merged.columns:
                             merged = merged.drop(columns=['leadId'])
+                        merged = merged.reset_index(drop=True)
                             
-                        # 4. Highlight mismatches
-                        def highlight_provider_mismatch(row):
+                        # 4. Interactive Mismatch Resolution
+                        mismatch_indices = []
+                        for idx, row in merged.iterrows():
                             provider = str(row.get('Provider', '')).strip().lower()
                             ref = str(row.get('referenceId.ns', '')).strip().lower()
                             
-                            # Create an empty style list for the row
-                            styles = [''] * len(row)
-                            
-                            # Only flag if both exist AND don't match. 
+                            # Only flag if both exist AND do not match
                             if provider != ref and ref != 'no match found' and ref != 'nan':
-                                for i, col in enumerate(row.index):
-                                    if col in ['Provider', 'referenceId.ns']:
-                                        styles[i] = 'background-color: #ffcccc; color: #900000;'
-                            return styles
-
-                        st.write(f"✅ Successfully separated and looked up {len(merged)} valid Leads IDs.")
-                        st.write("👀 **Preview: (Cells where `Provider` and `referenceId.ns` do not match are highlighted in red)**")
-                        
-                        # Apply styles to the dataframe
-                        styled_merged = merged.style.apply(highlight_provider_mismatch, axis=1)
-                        st.dataframe(styled_merged)
+                                mismatch_indices.append(idx)
+                                
+                        if mismatch_indices:
+                            st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match.")
+                            st.write("Review the conflicts below. Select which value should be used to update the cell:")
+                            
+                            # Isolate just the mismatched rows to display
+                            mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
+                            mismatch_df['Resolution'] = 'Use referenceId.ns' # Default choice
+                            
+                            # Display the interactive editor
+                            edited_mismatches = st.data_editor(
+                                mismatch_df,
+                                column_config={
+                                    "Resolution": st.column_config.SelectboxColumn(
+                                        "Which value is correct?",
+                                        help="Choose which value to keep. The other will be overwritten.",
+                                        options=["Use referenceId.ns", "Use Provider"],
+                                        required=True
+                                    )
+                                },
+                                disabled=["ID", "Leads ID", "Provider", "referenceId.ns"],
+                                hide_index=True,
+                                use_container_width=True
+                            )
+                            
+                            # Apply the user's choices back to the full dataset
+                            final_merged = merged.copy()
+                            for idx, row in edited_mismatches.iterrows():
+                                if row['Resolution'] == "Use referenceId.ns":
+                                    final_merged.at[idx, 'Provider'] = final_merged.at[idx, 'referenceId.ns']
+                                else:
+                                    final_merged.at[idx, 'referenceId.ns'] = final_merged.at[idx, 'Provider']
+                                    
+                            st.success("✅ Conflicts resolved! See the updated final table below.")
+                        else:
+                            final_merged = merged.copy()
+                            st.success(f"✅ Successfully processed {len(final_merged)} Leads IDs. No conflicts found!")
+                            
+                        st.write("👀 **Final Bulk Solving Table:**")
+                        st.dataframe(final_merged)
                         
                         # Export
-                        csv = merged.to_csv(index=False).encode('utf-8')
+                        csv = final_merged.to_csv(index=False).encode('utf-8')
                         st.download_button(
-                            label="📥 Download Bulk Solving Results",
+                            label="📥 Download Updated Results",
                             data=csv,
                             file_name="Bulk_Solving_Results.csv",
                             mime="text/csv",
