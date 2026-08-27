@@ -4,7 +4,7 @@ import numpy as np
 import gc
 
 # Configure the web page
-st.set_page_config(page_title="Bulk Lookup & SLA Tool", layout="wide")
+st.set_page_config(page_title="Project Alyson", layout="wide")
 st.title("Project Alyson")
 
 # FIX 1: Change to cache_resource. This stops Streamlit from duplicating 
@@ -41,7 +41,7 @@ def load_and_process_data(file):
     return df
 
 # --- 1. FILE UPLOAD ---
-uploaded_file = st.file_uploader("📁 Step 1: Upload your Master CSV", type=["csv"])
+uploaded_file = st.file_uploader("📁 Step 1: Upload the Tracked Rewards Export file. Make sure to convert it to CSV format first!", type=["csv"])
 
 if uploaded_file:
     with st.spinner("Reading data and calculating SLAs... (This takes a moment)"):
@@ -53,13 +53,13 @@ if uploaded_file:
         st.success(f"✅ Success! Loaded {len(df):,} rows.")
         
         # Create THREE separate tabs for your flows
-        tab1, tab2, tab3 = st.tabs(["🔍 Search by leadId", "📈 SLA Reports", "🛠️ Bulk Solving"])
+        tab1, tab2, tab3 = st.tabs(["🔍 Search by Lead ID", "📈 SLA Reports", "🛠️ Bulk Solving"])
         
         # --- TAB 1: SEARCH FLOW ---
         with tab1:
             col1, col2 = st.columns(2)
             with col1:
-                paste_area = st.text_area("Paste your leadIds here (one per line):", height=200)
+                paste_area = st.text_area("Paste your Lead IDs here (one per line):", height=200)
             with col2:
                 # Set up the requested default columns
                 desired_defaults = [
@@ -77,7 +77,7 @@ if uploaded_file:
                 search_list = [x.strip() for x in paste_area.strip().split('\n')]
                 
                 if not paste_area.strip() or not selected_cols:
-                    st.warning("⚠️ Please paste at least one leadId AND select at least one column.")
+                    st.warning("⚠️ Please paste at least one Lead ID AND select at least one column.")
                 else:
                     search_df = pd.DataFrame({'leadId': search_list})
                     cols_to_pull = list(set(selected_cols + ['leadId']))
@@ -161,8 +161,8 @@ if uploaded_file:
 
         # --- TAB 3: BULK SOLVING FLOW ---
         with tab3:
-            st.write("Upload your ticketing system export to split grouped Leads IDs and cross-reference them with the Master CSV.")
-            zd_file = st.file_uploader("📁 Step 2: Upload Ticketing CSV", type=["csv"], key="zd_upload")
+            st.write("Upload Support Team View export to cross-reference them with the Tracked Rewards Export.")
+            zd_file = st.file_uploader("📁 Step 2: Upload Support Team View export in CSV format", type=["csv"], key="zd_upload")
             
             if zd_file:
                 zd_df = pd.read_csv(zd_file, dtype=str)
@@ -251,7 +251,7 @@ if uploaded_file:
                         
                         if needs_review:
                             st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match.")
-                            st.markdown("📝 **Instructions:** \n- **Filter:** Click the magnifying glass icon or headers to search.\n- **Custom Values:** Edit the `Resolved Value` column. Type or paste from Excel!\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
+                            st.markdown("📝 **Instructions:** \n- **Filter:** Click the magnifying glass icon to search.\n- **Custom Values:** Edit the `Resolved Value` column. Type or paste from your Excel file!\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
                             
                             mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
                             mismatch_df['Resolved Value'] = mismatch_df['referenceId.ns']
@@ -348,7 +348,7 @@ if uploaded_file:
                                 
                                 csv_data = not_meeting_df.to_csv(index=False).encode('utf-8')
                                 st.download_button(
-                                    label="📥 Download Not Meeting Requirements CSV", 
+                                    label="📥 Download CSV", 
                                     data=csv_data, 
                                     file_name="Not_Meeting_Requirements.csv", 
                                     mime="text/csv", 
@@ -356,7 +356,7 @@ if uploaded_file:
                                 )
                                 st.divider()
                                 
-                            st.write("Expand a category below to copy the Zendesk query and download the ticket CSV for automated bulk solving.")
+                            st.write("Expand a category below to copy the Zendesk query or download the CSV file for bulk solving.")
 
                             # Helper function to generate UI for buckets 1-7 with full columns
                             def render_scenario(title, df_subset, file_key):
