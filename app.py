@@ -251,10 +251,11 @@ if uploaded_file:
                         
                         if needs_review:
                             st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match. Please check and update with the right value")
-                            st.markdown("📝 **Instructions:** \n- Edit the `Resolved Value` column. Type or paste from your Excel file!\n- Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
+                            st.markdown("📝 **Instructions:** \n- **Edit Value:** Edit the `Resolved Value` column. Type or paste from your Excel file!\n- **Remove Entry:** Check the `Remove (Assign Back)` box if both values are incorrect and the ticket needs reassignment.\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
                             
                             mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
                             mismatch_df['Resolved Value'] = mismatch_df['referenceId.ns']
+                            mismatch_df['Remove (Assign Back)'] = False
                             
                             def highlight_duplicates(data):
                                 styles = pd.DataFrame('', index=data.index, columns=data.columns)
@@ -267,7 +268,8 @@ if uploaded_file:
                             edited_mismatches = st.data_editor(
                                 styled_mismatch,
                                 column_config={
-                                    "Resolved Value": st.column_config.TextColumn("Resolved Value (Edit Here)", required=True)
+                                    "Resolved Value": st.column_config.TextColumn("Resolved Value (Edit Here)", required=True),
+                                    "Remove (Assign Back)": st.column_config.CheckboxColumn("Remove (Assign Back)", help="Check this to remove the entry completely if the Lead ID is wrong.")
                                 },
                                 disabled=["ID", "Leads ID", "Provider", "referenceId.ns"],
                                 hide_index=True,
@@ -284,13 +286,22 @@ if uploaded_file:
                         # ---------------------------------------------------------
                         if confirmed:
                             final_merged = merged.copy()
+                            indices_to_drop = []
                             
                             if needs_review:
                                 for idx in mismatch_indices:
-                                    new_val = edited_mismatches.at[idx, 'Resolved Value']
-                                    final_merged.at[idx, 'Provider'] = new_val
-                                    final_merged.at[idx, 'referenceId.ns'] = new_val
-                                st.success("✅ Conflicts resolved! See the categorized scenarios below.")
+                                    if edited_mismatches.at[idx, 'Remove (Assign Back)']:
+                                        indices_to_drop.append(idx)
+                                    else:
+                                        new_val = edited_mismatches.at[idx, 'Resolved Value']
+                                        final_merged.at[idx, 'Provider'] = new_val
+                                        final_merged.at[idx, 'referenceId.ns'] = new_val
+                                        
+                                # Drop the rows flagged for removal before bucketing
+                                if indices_to_drop:
+                                    final_merged = final_merged.drop(indices_to_drop)
+                                
+                                st.success(f"✅ Conflicts resolved! {len(indices_to_drop)} entries were removed. See the categorized scenarios below.")
 
                             st.write("### 🗂️ Bulk Solving Scenarios")
                             
