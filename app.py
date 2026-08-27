@@ -3,13 +3,17 @@ import pandas as pd
 import numpy as np
 import gc
 
-st.set_page_config(page_title="Project Alyson", layout="wide")
+# Configure the web page
+st.set_page_config(page_title="Bulk Lookup & SLA Tool", layout="wide")
 st.title("Project Alyson")
 
+# FIX 1: Change to cache_resource. This stops Streamlit from duplicating 
+# the massive dataframe in memory on every button click.
 @st.cache_resource
 def load_and_process_data(file):
     df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
     
+    # FIX 2: Pre-clean the leadId column here so it doesn't consume memory during the search
     if 'leadId' in df.columns:
         df['leadId'] = df['leadId'].fillna('').astype(str).str.strip()
     
@@ -30,13 +34,14 @@ def load_and_process_data(file):
         
         df['SLA Check'] = np.select(conditions, choices, default='')
         
+        # FIX 3: Immediately delete heavy temporary variables to free up RAM
         del today, fb_date, created_date, days_since_fb, days_since_created, conditions, choices
         gc.collect()
         
     return df
 
 # --- 1. FILE UPLOAD ---
-uploaded_file = st.file_uploader("📁 Step 1: Upload 'Tracked Rewards Export' file shared by John. Make sure you already converted the file to CSV format", type=["csv"])
+uploaded_file = st.file_uploader("📁 Step 1: Upload your Master CSV", type=["csv"])
 
 if uploaded_file:
     with st.spinner("Reading data and calculating SLAs... (This takes a moment)"):
@@ -47,7 +52,8 @@ if uploaded_file:
     else:
         st.success(f"✅ Success! Loaded {len(df):,} rows.")
         
-        tab1, tab2 = st.tabs(["🔍 Search by leadId", "📈 SLA Reports"])
+        # Create THREE separate tabs for your flows
+        tab1, tab2, tab3 = st.tabs(["🔍 Search by leadId", "📈 SLA Reports", "🛠️ Bulk Solving"])
         
         # --- TAB 1: SEARCH FLOW ---
         with tab1:
@@ -55,34 +61,44 @@ if uploaded_file:
             with col1:
                 paste_area = st.text_area("Paste your leadIds here (one per line):", height=200)
             with col2:
+                # Set up the requested default columns
                 desired_defaults = [
                     'leadId', 'referenceId.ns', 'application.entry.status', 'operationStatus', 
                     'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
                     'offerName', 'providerFeedbackDate', 'SLA Check'
                 ]
                 
+                # Safety check: Only apply defaults that actually exist in the uploaded CSV
                 actual_defaults = [col for col in desired_defaults if col in df.columns]
                 
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=actual_defaults)
             
             if st.button("🔍 Search & Preview", type="primary"):
-             
+                # Clean the pasted list: .strip() on the outside removes accidental blank spaces 
+                # at the very bottom, but keeps dashes/blanks in the middle for 1:1 VLOOKUP parity!
                 search_list = [x.strip() for x in paste_area.strip().split('\n')]
                 
+                # Check if the text box is completely empty
                 if not paste_area.strip() or not selected_cols:
                     st.warning("⚠️ Please paste at least one leadId AND select at least one column.")
                 else:
+                    # 1. Create a dataframe from the exact IDs the user searched for
                     search_df = pd.DataFrame({'leadId': search_list})
-              
+                    
+                    # 2. Ensure 'leadId' is included in the extraction so we can merge on it
                     cols_to_pull = list(set(selected_cols + ['leadId']))
-                   
+                    
+                    # 3. Extract only the actual matches from the master file to save memory
                     matched_df = df[df['leadId'].isin(search_list)][cols_to_pull]
-                   
+                    
+                    # 4. LEFT JOIN: This keeps every ID the user pasted, even if it has no match
                     merged_results = pd.merge(search_df, matched_df, on='leadId', how='left')
-                  
+                    
+                    # 5. Fill the empty cells for missing matches with "No match found"
                     cols_to_fill = [col for col in selected_cols if col != 'leadId']
                     merged_results[cols_to_fill] = merged_results[cols_to_fill].fillna('No match found')
-                  
+                    
+                    # 6. Restore the final visual order to exactly what the user selected in the dropdown
                     final_results = merged_results[selected_cols]
                     
                     st.write(f"✅ Processed {len(search_list):,} searched IDs!")
@@ -112,7 +128,8 @@ if uploaded_file:
             elt_summary_df = elt_passed_df.groupby('referenceId.ns', as_index=False).agg(
                 Number_of_leadIds=('leadId', 'count')
             )
-
+            
+            # Sort highest to lowest
             elt_summary_df = elt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reference ID)")
@@ -168,7 +185,8 @@ if uploaded_file:
             )
             
             flt_summary_df = flt_summary_df.rename(columns={'Preview Group': 'offerName (Grouped)'})
-
+            
+            # Sort highest to lowest
             flt_summary_df = flt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reward Category)")
@@ -184,3 +202,95 @@ if uploaded_file:
                 file_name="flt_passed_sla_list.csv", 
                 mime="text/csv"
             )
+
+        # --- TAB 3: BULK SOLVING FLOW ---
+        with tab3:
+            st.write("Upload your ticketing system export to split grouped Leads IDs and cross-reference them with the Master CSV.")
+            zd_file = st.file_uploader("📁 Step 2: Upload Ticketing CSV", type=["csv"], key="zd_upload")
+            
+            if zd_file:
+                zd_df = pd.read_csv(zd_file, dtype=str)
+                
+                # Check required columns from the uploaded file
+                required_cols = ['ID', 'Leads ID', 'Provider']
+                missing_cols = [c for c in required_cols if c not in zd_df.columns]
+                
+                if missing_cols:
+                    st.error(f"❌ ERROR: Missing required columns in your file: {', '.join(missing_cols)}")
+                else:
+                    # Clean up spaces
+                    zd_df['Leads ID'] = zd_df['Leads ID'].fillna('').astype(str).str.strip()
+                    zd_df['Provider'] = zd_df['Provider'].fillna('').astype(str).str.strip()
+                    
+                    # 1. Identify invalid entries (Contains letters, blanks, dashes, etc.)
+                    # isdigit() only returns True if it's purely numbers. So it catches "-" and "" instantly.
+                    invalid_mask = ~zd_df['Leads ID'].str.replace('000', '').str.isdigit()
+                    invalid_df = zd_df[invalid_mask]
+                    valid_df = zd_df[~invalid_mask].copy()
+                    
+                    if not invalid_df.empty:
+                        st.warning(f"⚠️ Flagged {len(invalid_df)} entries with missing or invalid Leads IDs (e.g., dashes, text, or blanks).")
+                        st.dataframe(invalid_df)
+                        
+                    if not valid_df.empty:
+                        # 2. Split batched Leads IDs
+                        def split_lead_ids(val):
+                            if len(val) > 7 and '000' in val:
+                                return [v for v in val.split('000') if v]
+                            return [val]
+                            
+                        # Apply split and explode into new rows
+                        valid_df['Leads ID'] = valid_df['Leads ID'].apply(split_lead_ids)
+                        valid_df = valid_df.explode('Leads ID')
+                        
+                        # 3. Lookup against master CSV
+                        master_cols_to_pull = [
+                            'referenceId.ns', 'application.entry.status', 'operationStatus', 
+                            'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
+                            'offerName', 'providerFeedbackDate', 'SLA Check'
+                        ]
+                        
+                        actual_master_cols = [c for c in master_cols_to_pull if c in df.columns]
+                        master_subset = df[['leadId'] + actual_master_cols]
+                        
+                        # Left join valid tickets with master data
+                        merged = pd.merge(valid_df, master_subset, left_on='Leads ID', right_on='leadId', how='left')
+                        
+                        # Clean up missing matches 
+                        for c in actual_master_cols:
+                            merged[c] = merged[c].fillna('No match found')
+                            
+                        # Drop duplicate leadId column from merge, keep visual order clean
+                        if 'leadId' in merged.columns:
+                            merged = merged.drop(columns=['leadId'])
+                            
+                        # 4. Highlight mismatches
+                        def highlight_provider_mismatch(row):
+                            provider = str(row.get('Provider', '')).strip().lower()
+                            ref = str(row.get('referenceId.ns', '')).strip().lower()
+                            
+                            # Create an empty style list for the row
+                            styles = [''] * len(row)
+                            
+                            # Only flag if both exist AND don't match. 
+                            if provider != ref and ref != 'no match found' and ref != 'nan':
+                                for i, col in enumerate(row.index):
+                                    if col in ['Provider', 'referenceId.ns']:
+                                        styles[i] = 'background-color: #ffcccc; color: #900000;'
+                            return styles
+
+                        st.write(f"✅ Successfully separated and looked up {len(merged)} valid Leads IDs.")
+                        st.write("👀 **Preview: (Cells where `Provider` and `referenceId.ns` do not match are highlighted in red)**")
+                        
+                        # Apply styles to the dataframe
+                        styled_merged = merged.style.apply(highlight_provider_mismatch, axis=1)
+                        st.dataframe(styled_merged)
+                        
+                        # Export
+                        csv = merged.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download Bulk Solving Results",
+                            data=csv,
+                            file_name="Bulk_Solving_Results.csv",
+                            mime="text/csv",
+                        )
