@@ -293,9 +293,72 @@ if uploaded_file:
                                 st.success("✅ Conflicts resolved! See the categorized scenarios below.")
 
                             st.write("### 🗂️ Bulk Solving Scenarios")
-                            st.write("Expand a category below to copy the Zendesk query and download the ticket CSV.")
                             
-                            # Helper function to generate UI for each scenario
+                            # Track which indices have been bucketed
+                            used_indices = set()
+
+                            def claim_rows(mask):
+                                df_subset = final_merged[mask & (~final_merged.index.isin(used_indices))].copy()
+                                used_indices.update(df_subset.index)
+                                return df_subset
+
+                            # Ensure column exists before checking
+                            if 'Fulfillment Issues' not in final_merged.columns:
+                                final_merged['Fulfillment Issues'] = ''
+                            
+                            final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
+                            
+                            # Pre-calculate dataframes 1 through 7 to establish what is leftover
+                            elt_within_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '')
+                            elt_within_df = claim_rows(elt_within_mask)
+
+                            elt_past_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == 'ELT Passed SLA')
+                            elt_past_df = claim_rows(elt_past_mask)
+
+                            flt_within_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == '')
+                            flt_within_df = claim_rows(flt_within_mask)
+
+                            flt_past_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == 'FLT Passed SLA')
+                            flt_past_df = claim_rows(flt_past_mask)
+
+                            flt_comp_mask = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED']))
+                            flt_comp_df = claim_rows(flt_comp_mask)
+
+                            reject_mask = final_merged['operationStatus'] == 'DECLINED'
+                            reject_df = claim_rows(reject_mask)
+
+                            resend_mask = (
+                                (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & 
+                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
+                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
+                            )
+                            resend_df = claim_rows(resend_mask)
+
+                            # 8. Not meeting the requirements (Everything else left over)
+                            leftover_mask = ~final_merged.index.isin(used_indices)
+                            not_meeting_df = claim_rows(leftover_mask)
+
+                            # --- UI RENDERING START ---
+
+                            # Render "Not Meeting Requirements" fixed at the very top
+                            if not not_meeting_df.empty:
+                                st.subheader(f"⚠️ Not Meeting Requirements ({len(not_meeting_df['ID'].dropna().unique())} Tickets)")
+                                st.write("These tickets do not match standard automated scenarios. Please review them manually.")
+                                st.dataframe(not_meeting_df, use_container_width=True)
+                                
+                                csv_data = not_meeting_df.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 Download Not Meeting Requirements CSV", 
+                                    data=csv_data, 
+                                    file_name="Not_Meeting_Requirements.csv", 
+                                    mime="text/csv", 
+                                    key="dl_Not_Meeting"
+                                )
+                                st.divider()
+                                
+                            st.write("Expand a category below to copy the Zendesk query and download the ticket CSV for automated bulk solving.")
+
+                            # Helper function to generate UI for buckets 1-7
                             def render_scenario(title, df_subset, file_key):
                                 if df_subset.empty:
                                     return
@@ -314,58 +377,19 @@ if uploaded_file:
                                     clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
                                     st.download_button(label=f"📥 Download CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
 
-                            # Track which indices have been bucketed
-                            used_indices = set()
-
-                            def claim_rows(mask):
-                                df_subset = final_merged[mask & (~final_merged.index.isin(used_indices))].copy()
-                                used_indices.update(df_subset.index)
-                                return df_subset
-
-                            # Ensure column exists before checking
-                            if 'Fulfillment Issues' not in final_merged.columns:
-                                final_merged['Fulfillment Issues'] = ''
+                            # Render scenarios 1-7 using the expander format
+                            render_scenario("ELT Within SLA", elt_within_df, "ELT_Within_SLA")
+                            render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA")
                             
-                            final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
-                            
-                            # 1. ELT Within SLA
-                            elt_within_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '')
-                            render_scenario("ELT Within SLA", claim_rows(elt_within_mask), "ELT_Within_SLA")
-
-                            # 2. ELT Past SLA
-                            elt_past_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == 'ELT Passed SLA')
-                            render_scenario("ELT Past SLA", claim_rows(elt_past_mask), "ELT_Past_SLA")
-
-                            # 3. FLT Within SLA (Separated by Provider)
-                            flt_within_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == '')
-                            flt_within_df = claim_rows(flt_within_mask)
                             if not flt_within_df.empty:
                                 for provider, group_df in flt_within_df.groupby('referenceId.ns'):
                                     render_scenario(f"FLT Within SLA - {provider}", group_df, f"FLT_Within_SLA_{provider}")
-
-                            # 4. FLT Past SLA
-                            flt_past_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == 'FLT Passed SLA')
-                            render_scenario("FLT Past SLA", claim_rows(flt_past_mask), "FLT_Past_SLA")
-
-                            # 5. FLT Completed (Separated by Date)
-                            flt_comp_mask = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED']))
-                            flt_comp_df = claim_rows(flt_comp_mask)
+                                    
+                            render_scenario("FLT Past SLA", flt_past_df, "FLT_Past_SLA")
+                            
                             if not flt_comp_df.empty:
                                 for date_val, group_df in flt_comp_df.groupby('redemptionEmailSentDate'):
                                     render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}")
-
-                            # 6. Rejected Application
-                            reject_mask = final_merged['operationStatus'] == 'DECLINED'
-                            render_scenario("Rejected Application", claim_rows(reject_mask), "Rejected_Application")
-
-                            # 7. Resend Redemption Email
-                            resend_mask = (
-                                (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & 
-                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
-                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
-                            )
-                            render_scenario("Resend Redemption Email", claim_rows(resend_mask), "Resend_Redemption_Email")
-
-                            # 8. Not meeting the requirements (Everything else left over)
-                            leftover_mask = ~final_merged.index.isin(used_indices)
-                            render_scenario("Not meeting the requirements", claim_rows(leftover_mask), "Not_Meeting_Requirements")
+                                    
+                            render_scenario("Rejected Application", reject_df, "Rejected_Application")
+                            render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email")
