@@ -181,7 +181,7 @@ if uploaded_file:
                     valid_df = zd_df[~invalid_mask].copy()
                     
                     if not invalid_df.empty:
-                        st.warning(f"⚠️ Flagged {len(invalid_df)} entries with missing or invalid Leads IDs.")
+                        st.warning(f"⚠️ Flagged {len(invalid_df)} entries with missing or invalid Leads IDs. You may reassign these tickets back to the ticket tagger")
                         inv_col1, inv_col2 = st.columns([1, 2])
                         with inv_col1:
                             invalid_display = invalid_df[['ID']].rename(columns={'ID': 'Zendesk Ticket #'})
@@ -250,8 +250,8 @@ if uploaded_file:
                         needs_review = len(mismatch_indices) > 0
                         
                         if needs_review:
-                            st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match.")
-                            st.markdown("📝 **Instructions:** \n- **Filter:** Click the magnifying glass icon to search.\n- **Custom Values:** Edit the `Resolved Value` column. Type or paste from your Excel file!\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
+                            st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match. Please check and update with the right value")
+                            st.markdown("📝 **Instructions:** \n- ** Edit the `Resolved Value` column. Type or paste from your Excel file!\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
                             
                             mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
                             mismatch_df['Resolved Value'] = mismatch_df['referenceId.ns']
