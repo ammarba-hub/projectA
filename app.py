@@ -286,20 +286,36 @@ if uploaded_file:
                                 
                         if mismatch_indices:
                             st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match.")
-                            st.write("Review the conflicts below. Select which value should be used to update the cell:")
+                            
+                            # Provide helpful instructions for the new features
+                            st.markdown("📝 **Instructions:**")
+                            st.markdown("- **Filter:** Click the magnifying glass icon or column headers to filter/search.")
+                            st.markdown("- **Custom Values & Paste:** Edit the `Resolved Value` column. You can type a custom value, or copy/paste straight from Excel!")
+                            st.markdown("- **Duplicates:** Rows with duplicate Zendesk Ticket IDs are highlighted in 🟡 yellow.")
                             
                             # Isolate just the mismatched rows to display
                             mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
-                            mismatch_df['Resolution'] = 'Use referenceId.ns' # Default choice
+                            
+                            # Add the open-text column for the user to edit, defaulting to referenceId.ns
+                            mismatch_df['Resolved Value'] = mismatch_df['referenceId.ns']
+                            
+                            # Function to highlight duplicate IDs
+                            def highlight_duplicates(data):
+                                styles = pd.DataFrame('', index=data.index, columns=data.columns)
+                                is_dup = data.duplicated(subset=['ID'], keep=False)
+                                styles.loc[is_dup, :] = 'background-color: #fff2cc; color: #8a6d3b;'
+                                return styles
+                                
+                            # Apply the styling rule
+                            styled_mismatch = mismatch_df.style.apply(highlight_duplicates, axis=None)
                             
                             # Display the interactive editor
                             edited_mismatches = st.data_editor(
-                                mismatch_df,
+                                styled_mismatch,
                                 column_config={
-                                    "Resolution": st.column_config.SelectboxColumn(
-                                        "Which value is correct?",
-                                        help="Choose which value to keep. The other will be overwritten.",
-                                        options=["Use referenceId.ns", "Use Provider"],
+                                    "Resolved Value": st.column_config.TextColumn(
+                                        "Resolved Value (Edit Here)",
+                                        help="Type a custom value, or paste a list of values here.",
                                         required=True
                                     )
                                 },
@@ -308,27 +324,44 @@ if uploaded_file:
                                 use_container_width=True
                             )
                             
-                            # Apply the user's choices back to the full dataset
-                            final_merged = merged.copy()
-                            for idx, row in edited_mismatches.iterrows():
-                                if row['Resolution'] == "Use referenceId.ns":
-                                    final_merged.at[idx, 'Provider'] = final_merged.at[idx, 'referenceId.ns']
-                                else:
-                                    final_merged.at[idx, 'referenceId.ns'] = final_merged.at[idx, 'Provider']
-                                    
-                            st.success("✅ Conflicts resolved! See the updated final table below.")
+                            st.write("---")
+                            
+                            # The final table is hidden until they click this confirmation box
+                            if st.checkbox("✅ I confirm all values are updated"):
+                                # Apply the user's choices back to the full dataset
+                                final_merged = merged.copy()
+                                
+                                for idx in mismatch_indices:
+                                    new_val = edited_mismatches.at[idx, 'Resolved Value']
+                                    # Overwrite both columns so the data is perfectly clean
+                                    final_merged.at[idx, 'Provider'] = new_val
+                                    final_merged.at[idx, 'referenceId.ns'] = new_val
+                                        
+                                st.success("✅ Conflicts resolved! See the updated final table below.")
+                                
+                                st.write("👀 **Final Bulk Solving Table:**")
+                                st.dataframe(final_merged)
+                                
+                                # Export
+                                csv = final_merged.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 Download Updated Results",
+                                    data=csv,
+                                    file_name="Bulk_Solving_Results.csv",
+                                    mime="text/csv",
+                                )
                         else:
                             final_merged = merged.copy()
                             st.success(f"✅ Successfully processed {len(final_merged)} Leads IDs. No conflicts found!")
                             
-                        st.write("👀 **Final Bulk Solving Table:**")
-                        st.dataframe(final_merged)
-                        
-                        # Export
-                        csv = final_merged.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Download Updated Results",
-                            data=csv,
-                            file_name="Bulk_Solving_Results.csv",
-                            mime="text/csv",
-                        )
+                            st.write("👀 **Final Bulk Solving Table:**")
+                            st.dataframe(final_merged)
+                            
+                            # Export
+                            csv = final_merged.to_csv(index=False).encode('utf-8')
+                            st.download_button(
+                                label="📥 Download Updated Results",
+                                data=csv,
+                                file_name="Bulk_Solving_Results.csv",
+                                mime="text/csv",
+                            )
