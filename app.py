@@ -74,38 +74,22 @@ if uploaded_file:
                 selected_cols = st.multiselect("Select columns to display:", df.columns.tolist(), default=actual_defaults)
             
             if st.button("🔍 Search & Preview", type="primary"):
-                # Clean the pasted list: .strip() on the outside removes accidental blank spaces 
-                # at the very bottom, but keeps dashes/blanks in the middle for 1:1 VLOOKUP parity!
                 search_list = [x.strip() for x in paste_area.strip().split('\n')]
                 
-                # Check if the text box is completely empty
                 if not paste_area.strip() or not selected_cols:
                     st.warning("⚠️ Please paste at least one leadId AND select at least one column.")
                 else:
-                    # 1. Create a dataframe from the exact IDs the user searched for
                     search_df = pd.DataFrame({'leadId': search_list})
-                    
-                    # 2. Ensure 'leadId' is included in the extraction so we can merge on it
                     cols_to_pull = list(set(selected_cols + ['leadId']))
-                    
-                    # 3. Extract only the actual matches from the master file to save memory
                     matched_df = df[df['leadId'].isin(search_list)][cols_to_pull]
-                    
-                    # 4. LEFT JOIN: This keeps every ID the user pasted, even if it has no match
                     merged_results = pd.merge(search_df, matched_df, on='leadId', how='left')
-                    
-                    # 5. Fill the empty cells for missing matches with "No match found"
                     cols_to_fill = [col for col in selected_cols if col != 'leadId']
                     merged_results[cols_to_fill] = merged_results[cols_to_fill].fillna('No match found')
-                    
-                    # 6. Restore the final visual order to exactly what the user selected in the dropdown
                     final_results = merged_results[selected_cols]
                     
                     st.write(f"✅ Processed {len(search_list):,} searched IDs!")
                     st.write("👀 **Here is a preview of the first 10 rows:**")
-                    
                     st.dataframe(final_results.head(10))
-                    
                     st.caption("Note: Click download to get all of your records, including the 'No match found' ones.")
                     
                     csv = final_results.to_csv(index=False).encode('utf-8')
@@ -122,19 +106,12 @@ if uploaded_file:
             
             # --- ELT List ---
             st.subheader("ELT Passed SLA Records")
-            
             elt_passed_df = df[df['SLA Check'] == 'ELT Passed SLA'][['referenceId.ns', 'lead.createdAt', 'leadId']]
-            
-            elt_summary_df = elt_passed_df.groupby('referenceId.ns', as_index=False).agg(
-                Number_of_leadIds=('leadId', 'count')
-            )
-            
-            # Sort highest to lowest
+            elt_summary_df = elt_passed_df.groupby('referenceId.ns', as_index=False).agg(Number_of_leadIds=('leadId', 'count'))
             elt_summary_df = elt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reference ID)")
             st.dataframe(elt_summary_df)
-            
             st.caption("Note: The downloaded file contains all details (referenceId.ns, lead.createdAt, leadId).")
             elt_csv = elt_passed_df.to_csv(index=False).encode('utf-8')
             st.download_button(
@@ -148,54 +125,33 @@ if uploaded_file:
             
             # --- FLT List ---
             st.subheader("FLT Passed SLA Records")
-            
             flt_passed_df = df[df['SLA Check'] == 'FLT Passed SLA'][['offerName', 'leadId', 'providerFeedbackDate']].copy()
             
             def group_offer_names(name):
                 name_str = str(name)
-                if 'Apple Store Gift Card' in name_str:
-                    return 'Apple Store Gift Card'
-                elif 'Wellcome' in name_str:
-                    return 'Wellcome Vouchers'
-                elif 'HKTVMall' in name_str or 'HKTVmall' in name_str:
-                    return 'HKTVMall Vouchers'
-                elif 'Apple iPad 11-inch (A16)' in name_str or 'iPad Pro 11-inch' in name_str or '11 inch iPad' in name_str:
-                    return 'Apple iPad 11-inch (A16)'
-                elif 'DELONGHI DEDICA DUO' in name_str or 'DELONGHIDEDICA DUO' in name_str:
-                    return 'Delonghi Dedica Duo EC890'
-                elif 'DYSON HD19' in name_str:
-                    return 'Dyson HD19 Hair Dryer'
-                elif 'DYSON HD16' in name_str:
-                    return 'Dyson HD16 Hair Dryer'
-                elif 'Delsey 30" GRENELLE SE' in name_str:
-                    return 'Delsey 30" GRENELLE SE'
-                elif 'Cash Rebate' in name_str:
-                    return 'FPS Cash'
-                elif 'LOJEL Cubo' in name_str or 'LOJEL CUBO' in name_str:
-                    return 'LOJEL Cubo'
-                elif 'PHILIPS ADD6920 RO Water Dispenser' in name_str or 'Philips ADD6920' in name_str:
-                    return 'Philips ADD6920 RO Water Dispenser'
-                else:
-                    return name_str 
+                if 'Apple Store Gift Card' in name_str: return 'Apple Store Gift Card'
+                elif 'Wellcome' in name_str: return 'Wellcome Vouchers'
+                elif 'HKTVMall' in name_str or 'HKTVmall' in name_str: return 'HKTVMall Vouchers'
+                elif 'Apple iPad 11-inch (A16)' in name_str or 'iPad Pro 11-inch' in name_str or '11 inch iPad' in name_str: return 'Apple iPad 11-inch (A16)'
+                elif 'DELONGHI DEDICA DUO' in name_str or 'DELONGHIDEDICA DUO' in name_str: return 'Delonghi Dedica Duo EC890'
+                elif 'DYSON HD19' in name_str: return 'Dyson HD19 Hair Dryer'
+                elif 'DYSON HD16' in name_str: return 'Dyson HD16 Hair Dryer'
+                elif 'Delsey 30" GRENELLE SE' in name_str: return 'Delsey 30" GRENELLE SE'
+                elif 'Cash Rebate' in name_str: return 'FPS Cash'
+                elif 'LOJEL Cubo' in name_str or 'LOJEL CUBO' in name_str: return 'LOJEL Cubo'
+                elif 'PHILIPS ADD6920 RO Water Dispenser' in name_str or 'Philips ADD6920' in name_str: return 'Philips ADD6920 RO Water Dispenser'
+                else: return name_str 
 
             flt_passed_df['Preview Group'] = flt_passed_df['offerName'].apply(group_offer_names)
-            
-            flt_summary_df = flt_passed_df.groupby('Preview Group', as_index=False).agg(
-                Number_of_leadIds=('leadId', 'count')
-            )
-            
+            flt_summary_df = flt_passed_df.groupby('Preview Group', as_index=False).agg(Number_of_leadIds=('leadId', 'count'))
             flt_summary_df = flt_summary_df.rename(columns={'Preview Group': 'offerName (Grouped)'})
-            
-            # Sort highest to lowest
             flt_summary_df = flt_summary_df.sort_values(by='Number_of_leadIds', ascending=False).reset_index(drop=True)
             
             st.write("👀 **Preview:** (Total leads per Reward Category)")
             st.dataframe(flt_summary_df)
-            
             st.caption("Note: The downloaded file contains all details (original offerName, leadId, providerFeedbackDate).")
             
             flt_csv = flt_passed_df.drop(columns=['Preview Group']).to_csv(index=False).encode('utf-8')
-            
             st.download_button(
                 label="📥 Download Full FLT List", 
                 data=flt_csv, 
@@ -211,39 +167,31 @@ if uploaded_file:
             if zd_file:
                 zd_df = pd.read_csv(zd_file, dtype=str)
                 
-                # Check required columns from the uploaded file
                 required_cols = ['ID', 'Leads ID', 'Provider']
                 missing_cols = [c for c in required_cols if c not in zd_df.columns]
                 
                 if missing_cols:
                     st.error(f"❌ ERROR: Missing required columns in your file: {', '.join(missing_cols)}")
                 else:
-                    # Clean up spaces
                     zd_df['Leads ID'] = zd_df['Leads ID'].fillna('').astype(str).str.strip()
                     zd_df['Provider'] = zd_df['Provider'].fillna('').astype(str).str.strip()
                     
-                    # 1. Identify invalid entries (Contains letters, blanks, dashes, etc.)
                     invalid_mask = ~zd_df['Leads ID'].str.replace('000', '').str.isdigit()
                     invalid_df = zd_df[invalid_mask]
                     valid_df = zd_df[~invalid_mask].copy()
                     
                     if not invalid_df.empty:
                         st.warning(f"⚠️ Flagged {len(invalid_df)} entries with missing or invalid Leads IDs.")
-                        
-                        # Set up two side-by-side columns for the display
                         inv_col1, inv_col2 = st.columns([1, 2])
-                        
                         with inv_col1:
                             invalid_display = invalid_df[['ID']].rename(columns={'ID': 'Zendesk Ticket #'})
                             st.dataframe(invalid_display, use_container_width=True)
-                            
                         with inv_col2:
                             st.write("📋 **Copy Zendesk Search Query:**")
                             search_string = " ".join([f'ticket_id:"{tid}"' for tid in invalid_df['ID'].dropna()])
                             st.code(search_string, language='text')
                         
                     if not valid_df.empty:
-                        # 2. Split batched Leads IDs
                         def split_lead_ids(val):
                             if len(val) > 7 and '000' in val:
                                 return [v for v in val.split('000') if v]
@@ -252,7 +200,6 @@ if uploaded_file:
                         valid_df['Leads ID'] = valid_df['Leads ID'].apply(split_lead_ids)
                         valid_df = valid_df.explode('Leads ID')
                         
-                        # 3. Lookup against master CSV
                         master_cols_to_pull = [
                             'referenceId.ns', 'application.entry.status', 'operationStatus', 
                             'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
@@ -262,22 +209,17 @@ if uploaded_file:
                         actual_master_cols = [c for c in master_cols_to_pull if c in df.columns]
                         master_subset = df[['leadId'] + actual_master_cols]
                         
-                        # Left join valid tickets with master data
                         merged = pd.merge(valid_df, master_subset, left_on='Leads ID', right_on='leadId', how='left')
                         
-                        # Clean up missing matches 
                         for c in actual_master_cols:
                             merged[c] = merged[c].fillna('No match found')
                             
-                        # Drop duplicate leadId column and reset index for perfect data mapping
                         if 'leadId' in merged.columns:
                             merged = merged.drop(columns=['leadId'])
                         merged = merged.reset_index(drop=True)
                             
-                        # 4. Auto-Resolve Known Mismatches & Flag Unknowns
+                        # Auto-Resolve
                         mismatch_indices = []
-                        
-                        # Dictionary for auto-resolutions (lowercase for robust matching)
                         known_resolutions = {
                             ('citi', 'citibank'): 'Citibank',
                             ('uaf', 'ua'): 'UA',
@@ -286,111 +228,144 @@ if uploaded_file:
                             ('htsc', 'huatai'): 'Huatai',
                             ('hase', 'hangseng'): 'HangSeng',
                             ('dahsing', 'dah sing'): 'Dah Sing',
-                            ('citic', 'cncbi'): 'CNCBI'
+                            ('citic', 'cncbi'): 'HangSeng'
                         }
                         
                         for idx, row in merged.iterrows():
                             provider_raw = str(row.get('Provider', '')).strip()
                             ref_raw = str(row.get('referenceId.ns', '')).strip()
-                            
                             provider = provider_raw.lower()
                             ref = ref_raw.lower()
                             
-                            # Only evaluate if they do not match AND we successfully looked up a reference ID
                             if provider != ref and ref != 'no match found' and ref != 'nan':
-                                
-                                # Rule A: If Provider is entirely blank, adopt referenceId.ns silently
                                 if provider == '':
                                     merged.at[idx, 'Provider'] = ref_raw
-                                    
-                                # Rule B: Check the known resolution dictionary
                                 elif (ref, provider) in known_resolutions:
                                     resolved_val = known_resolutions[(ref, provider)]
                                     merged.at[idx, 'Provider'] = resolved_val
                                     merged.at[idx, 'referenceId.ns'] = resolved_val
-                                    
-                                # Rule C: Flag for manual human review
                                 else:
                                     mismatch_indices.append(idx)
                                 
-                        if mismatch_indices:
+                        needs_review = len(mismatch_indices) > 0
+                        
+                        if needs_review:
                             st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match.")
+                            st.markdown("📝 **Instructions:** \n- **Filter:** Click the magnifying glass icon or headers to search.\n- **Custom Values:** Edit the `Resolved Value` column. Type or paste from Excel!\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
                             
-                            # Provide helpful instructions for the new features
-                            st.markdown("📝 **Instructions:**")
-                            st.markdown("- **Filter:** Click the magnifying glass icon or column headers to filter/search.")
-                            st.markdown("- **Custom Values & Paste:** Edit the `Resolved Value` column. You can type a custom value, or copy/paste straight from Excel!")
-                            st.markdown("- **Duplicates:** Rows with duplicate Zendesk Ticket IDs are highlighted in 🟡 yellow.")
-                            
-                            # Isolate just the mismatched rows to display
                             mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
-                            
-                            # Add the open-text column for the user to edit, defaulting to referenceId.ns
                             mismatch_df['Resolved Value'] = mismatch_df['referenceId.ns']
                             
-                            # Function to highlight duplicate IDs
                             def highlight_duplicates(data):
                                 styles = pd.DataFrame('', index=data.index, columns=data.columns)
                                 is_dup = data.duplicated(subset=['ID'], keep=False)
                                 styles.loc[is_dup, :] = 'background-color: #fff2cc; color: #8a6d3b;'
                                 return styles
                                 
-                            # Apply the styling rule
                             styled_mismatch = mismatch_df.style.apply(highlight_duplicates, axis=None)
                             
-                            # Display the interactive editor
                             edited_mismatches = st.data_editor(
                                 styled_mismatch,
                                 column_config={
-                                    "Resolved Value": st.column_config.TextColumn(
-                                        "Resolved Value (Edit Here)",
-                                        help="Type a custom value, or paste a list of values here.",
-                                        required=True
-                                    )
+                                    "Resolved Value": st.column_config.TextColumn("Resolved Value (Edit Here)", required=True)
                                 },
                                 disabled=["ID", "Leads ID", "Provider", "referenceId.ns"],
                                 hide_index=True,
                                 use_container_width=True
                             )
-                            
                             st.write("---")
+                            confirmed = st.checkbox("✅ I confirm all values are updated")
+                        else:
+                            confirmed = True
+                            st.success(f"✅ Successfully processed {len(merged)} Leads IDs. No conflicts found!")
+
+                        # ---------------------------------------------------------
+                        # SCENARIO BUCKETING LOGIC (Only runs after confirmation)
+                        # ---------------------------------------------------------
+                        if confirmed:
+                            final_merged = merged.copy()
                             
-                            # The final table is hidden until they click this confirmation box
-                            if st.checkbox("✅ I confirm all values are updated"):
-                                # Apply the user's choices back to the full dataset
-                                final_merged = merged.copy()
-                                
+                            if needs_review:
                                 for idx in mismatch_indices:
                                     new_val = edited_mismatches.at[idx, 'Resolved Value']
-                                    # Overwrite both columns so the data is perfectly clean
                                     final_merged.at[idx, 'Provider'] = new_val
                                     final_merged.at[idx, 'referenceId.ns'] = new_val
+                                st.success("✅ Conflicts resolved! See the categorized scenarios below.")
+
+                            st.write("### 🗂️ Bulk Solving Scenarios")
+                            st.write("Expand a category below to copy the Zendesk query and download the ticket CSV.")
+                            
+                            # Helper function to generate UI for each scenario
+                            def render_scenario(title, df_subset, file_key):
+                                if df_subset.empty:
+                                    return
+                                    
+                                unique_tickets = df_subset['ID'].dropna().unique()
+                                
+                                with st.expander(f"{title} ({len(unique_tickets)} Tickets)"):
+                                    sc_col1, sc_col2 = st.columns([1, 2])
+                                    with sc_col1:
+                                        st.dataframe(pd.DataFrame({'Zendesk Ticket #': unique_tickets}), use_container_width=True)
+                                    with sc_col2:
+                                        st.write("📋 **Copy Zendesk Search Query:**")
+                                        st.code(" ".join([f'ticket_id:"{tid}"' for tid in unique_tickets]), language='text')
                                         
-                                st.success("✅ Conflicts resolved! See the updated final table below.")
-                                
-                                st.write("👀 **Final Bulk Solving Table:**")
-                                st.dataframe(final_merged)
-                                
-                                # Export
-                                csv = final_merged.to_csv(index=False).encode('utf-8')
-                                st.download_button(
-                                    label="📥 Download Updated Results",
-                                    data=csv,
-                                    file_name="Bulk_Solving_Results.csv",
-                                    mime="text/csv",
-                                )
-                        else:
-                            final_merged = merged.copy()
-                            st.success(f"✅ Successfully processed {len(final_merged)} Leads IDs. No conflicts found!")
+                                    csv_data = df_subset.to_csv(index=False).encode('utf-8')
+                                    clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
+                                    st.download_button(label=f"📥 Download CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
+
+                            # Track which indices have been bucketed
+                            used_indices = set()
+
+                            def claim_rows(mask):
+                                df_subset = final_merged[mask & (~final_merged.index.isin(used_indices))].copy()
+                                used_indices.update(df_subset.index)
+                                return df_subset
+
+                            # Ensure column exists before checking
+                            if 'Fulfillment Issues' not in final_merged.columns:
+                                final_merged['Fulfillment Issues'] = ''
                             
-                            st.write("👀 **Final Bulk Solving Table:**")
-                            st.dataframe(final_merged)
+                            final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
                             
-                            # Export
-                            csv = final_merged.to_csv(index=False).encode('utf-8')
-                            st.download_button(
-                                label="📥 Download Updated Results",
-                                data=csv,
-                                file_name="Bulk_Solving_Results.csv",
-                                mime="text/csv",
+                            # 1. ELT Within SLA
+                            elt_within_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '')
+                            render_scenario("ELT Within SLA", claim_rows(elt_within_mask), "ELT_Within_SLA")
+
+                            # 2. ELT Past SLA
+                            elt_past_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == 'ELT Passed SLA')
+                            render_scenario("ELT Past SLA", claim_rows(elt_past_mask), "ELT_Past_SLA")
+
+                            # 3. FLT Within SLA (Separated by Provider)
+                            flt_within_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == '')
+                            flt_within_df = claim_rows(flt_within_mask)
+                            if not flt_within_df.empty:
+                                for provider, group_df in flt_within_df.groupby('referenceId.ns'):
+                                    render_scenario(f"FLT Within SLA - {provider}", group_df, f"FLT_Within_SLA_{provider}")
+
+                            # 4. FLT Past SLA
+                            flt_past_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == 'FLT Passed SLA')
+                            render_scenario("FLT Past SLA", claim_rows(flt_past_mask), "FLT_Past_SLA")
+
+                            # 5. FLT Completed (Separated by Date)
+                            flt_comp_mask = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED']))
+                            flt_comp_df = claim_rows(flt_comp_mask)
+                            if not flt_comp_df.empty:
+                                for date_val, group_df in flt_comp_df.groupby('redemptionEmailSentDate'):
+                                    render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}")
+
+                            # 6. Rejected Application
+                            reject_mask = final_merged['operationStatus'] == 'DECLINED'
+                            render_scenario("Rejected Application", claim_rows(reject_mask), "Rejected_Application")
+
+                            # 7. Resend Redemption Email
+                            resend_mask = (
+                                (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & 
+                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
+                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
                             )
+                            render_scenario("Resend Redemption Email", claim_rows(resend_mask), "Resend_Redemption_Email")
+
+                            # 8. Not meeting the requirements (Everything else left over)
+                            leftover_mask = ~final_merged.index.isin(used_indices)
+                            render_scenario("Not meeting the requirements", claim_rows(leftover_mask), "Not_Meeting_Requirements")
