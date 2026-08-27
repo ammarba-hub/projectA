@@ -205,8 +205,8 @@ if uploaded_file:
 
         # --- TAB 3: BULK SOLVING FLOW ---
         with tab3:
-            st.write("Upload your ticketing system export to split grouped Leads IDs and cross-reference them with the Master CSV.")
-            zd_file = st.file_uploader("📁 Step 2: Upload Ticketing CSV", type=["csv"], key="zd_upload")
+            st.write("Upload Support Team queue export to split grouped Leads IDs and cross-reference them with the Master CSV.")
+            zd_file = st.file_uploader("📁 Step 2: Upload Support Team queue CSV", type=["csv"], key="zd_upload")
             
             if zd_file:
                 zd_df = pd.read_csv(zd_file, dtype=str)
@@ -240,7 +240,7 @@ if uploaded_file:
                             st.dataframe(invalid_display, use_container_width=True)
                             
                         with inv_col2:
-                            st.write("📋 **Copy Zendesk Search Query:**")
+                            st.write("📋 **Zendesk Search Query:**")
                             # Build the copyable string format: ticket_id:"123" ticket_id:"456"
                             search_string = " ".join([f'ticket_id:"{tid}"' for tid in invalid_df['ID'].dropna()])
                             st.code(search_string, language='text')
@@ -258,7 +258,7 @@ if uploaded_file:
                         
                         # 3. Lookup against master CSV
                         master_cols_to_pull = [
-                            'referenceId.ns', 'application.entry.status', 'operationStatus', 
+                            'leadId', 'referenceId.ns', 'application.entry.status', 'operationStatus', 
                             'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
                             'offerName', 'providerFeedbackDate', 'SLA Check'
                         ]
