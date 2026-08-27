@@ -258,7 +258,7 @@ if uploaded_file:
                         
                         # 3. Lookup against master CSV
                         master_cols_to_pull = [
-                            'leadId', 'referenceId.ns', 'application.entry.status', 'operationStatus', 
+                            'referenceId.ns', 'application.entry.status', 'operationStatus', 
                             'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
                             'offerName', 'providerFeedbackDate', 'SLA Check'
                         ]
