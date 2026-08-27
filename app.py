@@ -251,7 +251,7 @@ if uploaded_file:
                         
                         if needs_review:
                             st.warning(f"⚠️ Found {len(mismatch_indices)} rows where Provider and referenceId.ns do not match. Please check and update with the right value")
-                            st.markdown("📝 **Instructions:** \n- ** Edit the `Resolved Value` column. Type or paste from your Excel file!\n- **Duplicates:** Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
+                            st.markdown("📝 **Instructions:** \n- Edit the `Resolved Value` column. Type or paste from your Excel file!\n- Yellow rows 🟡 indicate duplicate Zendesk Tickets.")
                             
                             mismatch_df = merged.loc[mismatch_indices, ['ID', 'Leads ID', 'Provider', 'referenceId.ns']].copy()
                             mismatch_df['Resolved Value'] = mismatch_df['referenceId.ns']
