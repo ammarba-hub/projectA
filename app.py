@@ -28,7 +28,7 @@ def load_and_process_data(file):
         
         conditions = [
             (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
-            (df['operationStatus'].isin(['PENDING', 'NONE'])) & (days_since_created > 56)
+            (df['operationStatus'].isin(['PENDING', 'NONE'])) & (days_since_created > 70)
         ]
         choices = ['FLT Passed SLA', 'ELT Passed SLA']
         
