@@ -11,51 +11,59 @@ st.title("Project Alyson")
 # the massive dataframe in memory on every button click.
 @st.cache_resource
 def load_and_process_data(file):
-    df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
+    # MEMORY FIX: Only force leadId as string. Let pandas natively compress the rest.
+    df = pd.read_csv(file, dtype={'leadId': str}, low_memory=False, on_bad_lines='skip')
     
-    # FIX 2: Pre-clean the leadId column here so it doesn't consume memory during the search
+    # MEMORY FIX: Convert repetitive text columns to "category" type to shrink RAM usage by up to 90%
+    cat_cols = ['operationStatus', 'referenceId.ns', 'application.entry.status', 
+                'vendorName', 'Reward Issues', 'Fulfillment Issues']
+    for c in cat_cols:
+        if c in df.columns:
+            df[c] = df[c].astype('category')
+
+    # Pre-clean the leadId column
     if 'leadId' in df.columns:
         df['leadId'] = df['leadId'].fillna('').astype(str).str.strip()
     
-    # Calculate the SLA Check column automatically
+    # Calculate the SLA Check column automatically using Sequential Memory Release
     if 'SLA Check' not in df.columns:
-        today = pd.Timestamp.today().normalize()
-        fb_date = pd.to_datetime(df['providerFeedbackDate'].astype(str).str[:10], errors='coerce')
-        created_date = pd.to_datetime(df['lead.createdAt'].astype(str).str[:10], errors='coerce')
-        
-        days_since_fb = (today - fb_date).dt.days
-        days_since_created = (today - created_date).dt.days
-        
-        # Initialize an empty SLA column
         df['SLA Check'] = ''
+        today = pd.Timestamp.today().normalize()
         
-        # --- SEQUENTIAL MEMORY-SAFE CALCULATION ---
-        # 1. FLT Passed SLA
-        mask_flt = (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56)
-        df.loc[mask_flt, 'SLA Check'] = 'FLT Passed SLA'
-        del mask_flt # Release memory instantly
-        
-        # Base mask for ELT
-        mask_elt_base = df['operationStatus'].isin(['PENDING', 'NONE'])
-        
-        if 'referenceId.ns' in df.columns:
-            # 2a. ELT Passed SLA (AMEX - 120 Days)
-            mask_amex = mask_elt_base & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120)
-            df.loc[mask_amex, 'SLA Check'] = 'ELT Passed SLA'
-            del mask_amex
+        # Calculate FLT first, apply it, and delete temporary arrays instantly
+        if 'providerFeedbackDate' in df.columns:
+            fb_date = pd.to_datetime(df['providerFeedbackDate'].astype(str).str[:10], errors='coerce')
+            days_since_fb = (today - fb_date).dt.days
+            del fb_date 
             
-            # 2b. ELT Passed SLA (Others - 70 Days)
-            mask_others = mask_elt_base & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
-            df.loc[mask_others, 'SLA Check'] = 'ELT Passed SLA'
-            del mask_others
-        else:
-            # Fallback if referenceId.ns is missing
-            mask_elt = mask_elt_base & (days_since_created > 70)
-            df.loc[mask_elt, 'SLA Check'] = 'ELT Passed SLA'
-            del mask_elt
-        
-        # FIX 3: Immediately delete heavy temporary variables to free up RAM
-        del mask_elt_base, today, fb_date, created_date, days_since_fb, days_since_created
+            mask_flt = (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56)
+            df.loc[mask_flt, 'SLA Check'] = 'FLT Passed SLA'
+            del mask_flt, days_since_fb
+            
+        # Calculate ELT second, apply it, and delete temporary arrays instantly
+        if 'lead.createdAt' in df.columns:
+            created_date = pd.to_datetime(df['lead.createdAt'].astype(str).str[:10], errors='coerce')
+            days_since_created = (today - created_date).dt.days
+            del created_date 
+            
+            mask_elt_base = df['operationStatus'].isin(['PENDING', 'NONE'])
+            
+            if 'referenceId.ns' in df.columns:
+                mask_amex = mask_elt_base & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120)
+                df.loc[mask_amex, 'SLA Check'] = 'ELT Passed SLA'
+                del mask_amex
+                
+                mask_others = mask_elt_base & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
+                df.loc[mask_others, 'SLA Check'] = 'ELT Passed SLA'
+                del mask_others
+            else:
+                mask_elt = mask_elt_base & (days_since_created > 70)
+                df.loc[mask_elt, 'SLA Check'] = 'ELT Passed SLA'
+                del mask_elt
+                
+            del mask_elt_base, days_since_created
+            
+        # Force garbage collector to clean up any loose RAM
         gc.collect()
         
     return df
@@ -232,6 +240,8 @@ if uploaded_file:
                         merged = pd.merge(valid_df, master_subset, left_on='Leads ID', right_on='leadId', how='left')
                         
                         for c in actual_master_cols:
+                            if merged[c].dtype.name == 'category':
+                                merged[c] = merged[c].astype(str)
                             merged[c] = merged[c].fillna('No match found')
                             
                         if 'leadId' in merged.columns:
