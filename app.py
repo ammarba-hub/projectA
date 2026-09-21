@@ -26,24 +26,36 @@ def load_and_process_data(file):
         days_since_fb = (today - fb_date).dt.days
         days_since_created = (today - created_date).dt.days
         
-        if 'referenceId.ns' in df.columns:
-            conditions = [
-                (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
-                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120),
-                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
-            ]
-            choices = ['FLT Passed SLA', 'ELT Passed SLA', 'ELT Passed SLA']
-        else:
-            conditions = [
-                (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
-                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (days_since_created > 70)
-            ]
-            choices = ['FLT Passed SLA', 'ELT Passed SLA']
+        # Initialize an empty SLA column
+        df['SLA Check'] = ''
         
-        df['SLA Check'] = np.select(conditions, choices, default='')
+        # --- SEQUENTIAL MEMORY-SAFE CALCULATION ---
+        # 1. FLT Passed SLA
+        mask_flt = (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56)
+        df.loc[mask_flt, 'SLA Check'] = 'FLT Passed SLA'
+        del mask_flt # Release memory instantly
+        
+        # Base mask for ELT
+        mask_elt_base = df['operationStatus'].isin(['PENDING', 'NONE'])
+        
+        if 'referenceId.ns' in df.columns:
+            # 2a. ELT Passed SLA (AMEX - 120 Days)
+            mask_amex = mask_elt_base & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120)
+            df.loc[mask_amex, 'SLA Check'] = 'ELT Passed SLA'
+            del mask_amex
+            
+            # 2b. ELT Passed SLA (Others - 70 Days)
+            mask_others = mask_elt_base & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
+            df.loc[mask_others, 'SLA Check'] = 'ELT Passed SLA'
+            del mask_others
+        else:
+            # Fallback if referenceId.ns is missing
+            mask_elt = mask_elt_base & (days_since_created > 70)
+            df.loc[mask_elt, 'SLA Check'] = 'ELT Passed SLA'
+            del mask_elt
         
         # FIX 3: Immediately delete heavy temporary variables to free up RAM
-        del today, fb_date, created_date, days_since_fb, days_since_created, conditions, choices
+        del mask_elt_base, today, fb_date, created_date, days_since_fb, days_since_created
         gc.collect()
         
     return df
