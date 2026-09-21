@@ -351,47 +351,57 @@ if uploaded_file:
                             
                             final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
                             
-                            # Pre-calculate dataframes to establish what is leftover
-                            
+                            # MEMORY FIX: Pre-calculate common string/boolean checks ONCE 
+                            is_fulfilled_rec = final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])
+                            is_pending_none = final_merged['operationStatus'].isin(['NONE', 'PENDING'])
+                            is_appr_special = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL'])
+                            is_reward_360 = final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False)
+
                             # 1. ELT Within SLA - Split by AMEX and Others
-                            elt_within_amex_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') == 'AMEX')
-                            elt_within_amex_df = claim_rows(elt_within_amex_mask)
+                            mask1 = is_pending_none & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') == 'AMEX')
+                            elt_within_amex_df = claim_rows(mask1)
+                            del mask1
                             
-                            elt_within_others_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') != 'AMEX')
-                            elt_within_others_df = claim_rows(elt_within_others_mask)
+                            mask2 = is_pending_none & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') != 'AMEX')
+                            elt_within_others_df = claim_rows(mask2)
+                            del mask2
 
-                            elt_past_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == 'ELT Passed SLA')
-                            elt_past_df = claim_rows(elt_past_mask)
+                            mask3 = is_pending_none & (final_merged['SLA Check'] == 'ELT Passed SLA')
+                            elt_past_df = claim_rows(mask3)
+                            del mask3
 
-                            flt_within_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == '')
-                            flt_within_df = claim_rows(flt_within_mask)
+                            mask4 = is_appr_special & (final_merged['SLA Check'] == '')
+                            flt_within_df = claim_rows(mask4)
+                            del mask4
 
-                            flt_past_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == 'FLT Passed SLA')
-                            flt_past_df = claim_rows(flt_past_mask)
+                            mask5 = is_appr_special & (final_merged['SLA Check'] == 'FLT Passed SLA')
+                            flt_past_df = claim_rows(mask5)
+                            del mask5
 
-                            flt_comp_mask = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED']))
-                            flt_comp_df = claim_rows(flt_comp_mask)
+                            mask6 = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec
+                            flt_comp_df = claim_rows(mask6)
+                            del mask6
 
-                            reject_mask = final_merged['operationStatus'] == 'DECLINED'
-                            reject_df = claim_rows(reject_mask)
+                            mask7 = final_merged['operationStatus'] == 'DECLINED'
+                            reject_df = claim_rows(mask7)
+                            del mask7
 
-                            resend_mask = (
-                                (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & 
-                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
-                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
-                            )
-                            resend_df = claim_rows(resend_mask)
+                            mask8 = (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec & is_reward_360
+                            resend_df = claim_rows(mask8)
+                            del mask8
                             
-                            evoucher_mask = (
-                                (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & 
-                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
-                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
-                            )
-                            evoucher_df = claim_rows(evoucher_mask)
+                            mask9 = (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & is_fulfilled_rec & is_reward_360
+                            evoucher_df = claim_rows(mask9)
+                            del mask9
+
+                            # Free up the temporary common checks
+                            del is_fulfilled_rec, is_pending_none, is_appr_special, is_reward_360
+                            gc.collect()
 
                             # 8. Not meeting the requirements (Everything else left over)
                             leftover_mask = ~final_merged.index.isin(used_indices)
                             not_meeting_df = claim_rows(leftover_mask)
+                            del leftover_mask
 
                             # --- UI RENDERING START ---
 
@@ -431,7 +441,7 @@ if uploaded_file:
                                     clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
                                     st.download_button(label=f"📥 Download CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
 
-                            # Render scenarios 1-7 using the expander format
+                            # Render scenarios using the expander format
                             render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX")
                             render_scenario("ELT Within SLA - Others", elt_within_others_df, "ELT_Within_SLA_Others")
                             render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA")
