@@ -11,39 +11,59 @@ st.title("Project Alyson")
 # the massive dataframe in memory on every button click.
 @st.cache_resource
 def load_and_process_data(file):
-    df = pd.read_csv(file, dtype=str, low_memory=False, on_bad_lines='skip')
+    # MEMORY FIX: Only force leadId as string. Let pandas natively compress the rest.
+    df = pd.read_csv(file, dtype={'leadId': str}, low_memory=False, on_bad_lines='skip')
     
-    # FIX 2: Pre-clean the leadId column here so it doesn't consume memory during the search
+    # MEMORY FIX: Convert repetitive text columns to "category" type to shrink RAM usage by up to 90%
+    cat_cols = ['operationStatus', 'referenceId.ns', 'application.entry.status', 
+                'vendorName', 'Reward Issues', 'Fulfillment Issues']
+    for c in cat_cols:
+        if c in df.columns:
+            df[c] = df[c].astype('category')
+
+    # Pre-clean the leadId column
     if 'leadId' in df.columns:
         df['leadId'] = df['leadId'].fillna('').astype(str).str.strip()
     
-    # Calculate the SLA Check column automatically
+    # Calculate the SLA Check column automatically using Sequential Memory Release
     if 'SLA Check' not in df.columns:
+        df['SLA Check'] = ''
         today = pd.Timestamp.today().normalize()
-        fb_date = pd.to_datetime(df['providerFeedbackDate'].astype(str).str[:10], errors='coerce')
-        created_date = pd.to_datetime(df['lead.createdAt'].astype(str).str[:10], errors='coerce')
         
-        days_since_fb = (today - fb_date).dt.days
-        days_since_created = (today - created_date).dt.days
-        
-        if 'referenceId.ns' in df.columns:
-            conditions = [
-                (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
-                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120),
-                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
-            ]
-            choices = ['FLT Passed SLA', 'ELT Passed SLA', 'ELT Passed SLA']
-        else:
-            conditions = [
-                (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
-                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (days_since_created > 70)
-            ]
-            choices = ['FLT Passed SLA', 'ELT Passed SLA']
-        
-        df['SLA Check'] = np.select(conditions, choices, default='')
-        
-        # FIX 3: Immediately delete heavy temporary variables to free up RAM
-        del today, fb_date, created_date, days_since_fb, days_since_created, conditions, choices
+        # Calculate FLT first, apply it, and delete temporary arrays instantly
+        if 'providerFeedbackDate' in df.columns:
+            fb_date = pd.to_datetime(df['providerFeedbackDate'].astype(str).str[:10], errors='coerce')
+            days_since_fb = (today - fb_date).dt.days
+            del fb_date 
+            
+            mask_flt = (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56)
+            df.loc[mask_flt, 'SLA Check'] = 'FLT Passed SLA'
+            del mask_flt, days_since_fb
+            
+        # Calculate ELT second, apply it, and delete temporary arrays instantly
+        if 'lead.createdAt' in df.columns:
+            created_date = pd.to_datetime(df['lead.createdAt'].astype(str).str[:10], errors='coerce')
+            days_since_created = (today - created_date).dt.days
+            del created_date 
+            
+            mask_elt_base = df['operationStatus'].isin(['PENDING', 'NONE'])
+            
+            if 'referenceId.ns' in df.columns:
+                mask_amex = mask_elt_base & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120)
+                df.loc[mask_amex, 'SLA Check'] = 'ELT Passed SLA'
+                del mask_amex
+                
+                mask_others = mask_elt_base & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
+                df.loc[mask_others, 'SLA Check'] = 'ELT Passed SLA'
+                del mask_others
+            else:
+                mask_elt = mask_elt_base & (days_since_created > 70)
+                df.loc[mask_elt, 'SLA Check'] = 'ELT Passed SLA'
+                del mask_elt
+                
+            del mask_elt_base, days_since_created
+            
+        # Force garbage collector to clean up any loose RAM
         gc.collect()
         
     return df
@@ -193,7 +213,7 @@ if uploaded_file:
                         inv_col1, inv_col2 = st.columns([1, 2])
                         with inv_col1:
                             invalid_display = invalid_df[['ID']].rename(columns={'ID': 'Zendesk Ticket #'})
-                            st.dataframe(invalid_display)
+                            st.dataframe(invalid_display, use_container_width=True)
                         with inv_col2:
                             st.write("📋 **Copy Zendesk Search Query:**")
                             search_string = " ".join([f'ticket_id:"{tid}"' for tid in invalid_df['ID'].dropna()])
@@ -222,6 +242,8 @@ if uploaded_file:
                         merged = pd.merge(valid_df, master_subset, left_on='Leads ID', right_on='leadId', how='left')
                         
                         for c in actual_master_cols:
+                            if merged[c].dtype.name == 'category':
+                                merged[c] = merged[c].astype(str)
                             merged[c] = merged[c].fillna('No match found')
                             
                         if 'leadId' in merged.columns:
@@ -282,7 +304,8 @@ if uploaded_file:
                                     "Remove (Assign Back)": st.column_config.CheckboxColumn("Remove (Assign Back)", help="Check this to remove the entry completely if the Lead ID is wrong.")
                                 },
                                 disabled=["ID", "Leads ID", "Provider", "referenceId.ns"],
-                                hide_index=True
+                                hide_index=True,
+                                use_container_width=True
                             )
                             st.write("---")
                             confirmed = st.checkbox("✅ I confirm all values are updated")
@@ -327,51 +350,63 @@ if uploaded_file:
                                 final_merged['Fulfillment Issues'] = ''
                             if 'Reward Issues' not in final_merged.columns:
                                 final_merged['Reward Issues'] = ''
+                            if 'Contact Reason' not in final_merged.columns:
+                                final_merged['Contact Reason'] = ''
                             
                             final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
                             
-                            # Pre-calculate dataframes to establish what is leftover
-                            
+                            # MEMORY FIX: Pre-calculate common string/boolean checks ONCE 
+                            is_fulfilled_rec = final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])
+                            is_pending_none = final_merged['operationStatus'].isin(['NONE', 'PENDING'])
+                            is_appr_special = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL'])
+                            is_reward_360 = final_merged['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False)
+
                             # 1. ELT Within SLA - Split by AMEX and Others
-                            elt_within_amex_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') == 'AMEX')
-                            elt_within_amex_df = claim_rows(elt_within_amex_mask)
+                            mask1 = is_pending_none & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') == 'AMEX')
+                            elt_within_amex_df = claim_rows(mask1)
+                            del mask1
                             
-                            elt_within_others_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') != 'AMEX')
-                            elt_within_others_df = claim_rows(elt_within_others_mask)
+                            mask2 = is_pending_none & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') != 'AMEX')
+                            elt_within_others_df = claim_rows(mask2)
+                            del mask2
 
-                            elt_past_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == 'ELT Passed SLA')
-                            elt_past_df = claim_rows(elt_past_mask)
+                            mask3 = is_pending_none & (final_merged['SLA Check'] == 'ELT Passed SLA')
+                            elt_past_df = claim_rows(mask3)
+                            del mask3
 
-                            flt_within_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == '')
-                            flt_within_df = claim_rows(flt_within_mask)
+                            mask4 = is_appr_special & (final_merged['SLA Check'] == '')
+                            flt_within_df = claim_rows(mask4)
+                            del mask4
 
-                            flt_past_mask = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL']) & (final_merged['SLA Check'] == 'FLT Passed SLA')
-                            flt_past_df = claim_rows(flt_past_mask)
+                            mask5 = is_appr_special & (final_merged['SLA Check'] == 'FLT Passed SLA')
+                            flt_past_df = claim_rows(mask5)
+                            del mask5
 
-                            flt_comp_mask = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED']))
-                            flt_comp_df = claim_rows(flt_comp_mask)
+                            mask6 = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec
+                            flt_comp_df = claim_rows(mask6)
+                            del mask6
 
-                            reject_mask = final_merged['operationStatus'] == 'DECLINED'
-                            reject_df = claim_rows(reject_mask)
+                            mask7 = final_merged['operationStatus'] == 'DECLINED'
+                            reject_df = claim_rows(mask7)
+                            del mask7
 
-                            resend_mask = (
-                                (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & 
-                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
-                                (final_merged['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False))
-                            )
-                            resend_df = claim_rows(resend_mask)
+                            mask8 = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Fulfillment Issues') & (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec & is_reward_360
+                            resend_df = claim_rows(mask8)
+                            del mask8
                             
                             # SAFETY NET 3: Force string cast before .str.contains to handle missing/bad text gracefully
-                            evoucher_mask = (
-                                (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & 
-                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
-                                (final_merged['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False))
-                            )
-                            evoucher_df = claim_rows(evoucher_mask)
+                            mask9 = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & is_fulfilled_rec & is_reward_360
+                            evoucher_df = claim_rows(mask9)
+                            del mask9
+
+                            # Free up the temporary common checks
+                            del is_fulfilled_rec, is_pending_none, is_appr_special, is_reward_360
+                            gc.collect()
 
                             # 8. Not meeting the requirements (Everything else left over)
                             leftover_mask = ~final_merged.index.isin(used_indices)
                             not_meeting_df = claim_rows(leftover_mask)
+                            del leftover_mask
 
                             # --- UI RENDERING START ---
 
@@ -379,7 +414,7 @@ if uploaded_file:
                             if not not_meeting_df.empty:
                                 st.subheader(f"⚠️ Not Meeting Requirements ({len(not_meeting_df['ID'].dropna().unique())} Tickets)")
                                 st.write("These tickets do not match standard automated scenarios. Please review them manually.")
-                                st.dataframe(not_meeting_df)
+                                st.dataframe(not_meeting_df, use_container_width=True)
                                 
                                 csv_data = not_meeting_df.to_csv(index=False).encode('utf-8')
                                 st.download_button(
@@ -412,7 +447,7 @@ if uploaded_file:
                                     clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
                                     st.download_button(label=f"📥 Download Full CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
 
-                            # Render scenarios 1-7 using the expander format
+                            # Render scenarios using the expander format
                             render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX")
                             render_scenario("ELT Within SLA - Others", elt_within_others_df, "ELT_Within_SLA_Others")
                             render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA")
