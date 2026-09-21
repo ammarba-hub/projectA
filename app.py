@@ -324,6 +324,8 @@ if uploaded_file:
                             # Ensure column exists before checking
                             if 'Fulfillment Issues' not in final_merged.columns:
                                 final_merged['Fulfillment Issues'] = ''
+                            if 'Reward Issues' not in final_merged.columns:
+                                final_merged['Reward Issues'] = ''
                             
                             final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
                             
@@ -357,6 +359,13 @@ if uploaded_file:
                                 (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
                             )
                             resend_df = claim_rows(resend_mask)
+                            
+                            evoucher_mask = (
+                                (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & 
+                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
+                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
+                            )
+                            evoucher_df = claim_rows(evoucher_mask)
 
                             # 8. Not meeting the requirements (Everything else left over)
                             leftover_mask = ~final_merged.index.isin(used_indices)
@@ -417,3 +426,4 @@ if uploaded_file:
                                     
                             render_scenario("Rejected Application", reject_df, "Rejected_Application")
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email")
+                            render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue")
