@@ -26,11 +26,19 @@ def load_and_process_data(file):
         days_since_fb = (today - fb_date).dt.days
         days_since_created = (today - created_date).dt.days
         
-        conditions = [
-            (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
-            (df['operationStatus'].isin(['PENDING', 'NONE'])) & (days_since_created > 70)
-        ]
-        choices = ['FLT Passed SLA', 'ELT Passed SLA']
+        if 'referenceId.ns' in df.columns:
+            conditions = [
+                (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
+                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (df['referenceId.ns'].fillna('') == 'AMEX') & (days_since_created > 120),
+                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (df['referenceId.ns'].fillna('') != 'AMEX') & (days_since_created > 70)
+            ]
+            choices = ['FLT Passed SLA', 'ELT Passed SLA', 'ELT Passed SLA']
+        else:
+            conditions = [
+                (df['operationStatus'] == 'APPROVED') & (days_since_fb > 56),
+                (df['operationStatus'].isin(['PENDING', 'NONE'])) & (days_since_created > 70)
+            ]
+            choices = ['FLT Passed SLA', 'ELT Passed SLA']
         
         df['SLA Check'] = np.select(conditions, choices, default='')
         
@@ -319,9 +327,14 @@ if uploaded_file:
                             
                             final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
                             
-                            # Pre-calculate dataframes 1 through 7 to establish what is leftover
-                            elt_within_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '')
-                            elt_within_df = claim_rows(elt_within_mask)
+                            # Pre-calculate dataframes to establish what is leftover
+                            
+                            # 1. ELT Within SLA - Split by AMEX and Others
+                            elt_within_amex_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') == 'AMEX')
+                            elt_within_amex_df = claim_rows(elt_within_amex_mask)
+                            
+                            elt_within_others_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') != 'AMEX')
+                            elt_within_others_df = claim_rows(elt_within_others_mask)
 
                             elt_past_mask = final_merged['operationStatus'].isin(['NONE', 'PENDING']) & (final_merged['SLA Check'] == 'ELT Passed SLA')
                             elt_past_df = claim_rows(elt_past_mask)
@@ -388,7 +401,8 @@ if uploaded_file:
                                     st.download_button(label=f"📥 Download CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
 
                             # Render scenarios 1-7 using the expander format
-                            render_scenario("ELT Within SLA", elt_within_df, "ELT_Within_SLA")
+                            render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX")
+                            render_scenario("ELT Within SLA - Others", elt_within_others_df, "ELT_Within_SLA_Others")
                             render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA")
                             
                             if not flt_within_df.empty:
