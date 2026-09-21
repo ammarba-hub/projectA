@@ -193,7 +193,7 @@ if uploaded_file:
                         inv_col1, inv_col2 = st.columns([1, 2])
                         with inv_col1:
                             invalid_display = invalid_df[['ID']].rename(columns={'ID': 'Zendesk Ticket #'})
-                            st.dataframe(invalid_display, use_container_width=True)
+                            st.dataframe(invalid_display)
                         with inv_col2:
                             st.write("📋 **Copy Zendesk Search Query:**")
                             search_string = " ".join([f'ticket_id:"{tid}"' for tid in invalid_df['ID'].dropna()])
@@ -215,7 +215,9 @@ if uploaded_file:
                         ]
                         
                         actual_master_cols = [c for c in master_cols_to_pull if c in df.columns]
-                        master_subset = df[['leadId'] + actual_master_cols]
+                        
+                        # SAFETY NET 1: Drop duplicates in the master file to prevent Cartesian row-multiplication explosion
+                        master_subset = df[['leadId'] + actual_master_cols].drop_duplicates(subset=['leadId'], keep='last')
                         
                         merged = pd.merge(valid_df, master_subset, left_on='Leads ID', right_on='leadId', how='left')
                         
@@ -280,8 +282,7 @@ if uploaded_file:
                                     "Remove (Assign Back)": st.column_config.CheckboxColumn("Remove (Assign Back)", help="Check this to remove the entry completely if the Lead ID is wrong.")
                                 },
                                 disabled=["ID", "Leads ID", "Provider", "referenceId.ns"],
-                                hide_index=True,
-                                use_container_width=True
+                                hide_index=True
                             )
                             st.write("---")
                             confirmed = st.checkbox("✅ I confirm all values are updated")
@@ -324,6 +325,8 @@ if uploaded_file:
                             # Ensure column exists before checking
                             if 'Fulfillment Issues' not in final_merged.columns:
                                 final_merged['Fulfillment Issues'] = ''
+                            if 'Reward Issues' not in final_merged.columns:
+                                final_merged['Reward Issues'] = ''
                             
                             final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
                             
@@ -354,9 +357,17 @@ if uploaded_file:
                             resend_mask = (
                                 (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & 
                                 (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
-                                (final_merged['vendorName'].fillna('').str.contains('Reward 360', case=False, na=False))
+                                (final_merged['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False))
                             )
                             resend_df = claim_rows(resend_mask)
+                            
+                            # SAFETY NET 3: Force string cast before .str.contains to handle missing/bad text gracefully
+                            evoucher_mask = (
+                                (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & 
+                                (final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])) & 
+                                (final_merged['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False))
+                            )
+                            evoucher_df = claim_rows(evoucher_mask)
 
                             # 8. Not meeting the requirements (Everything else left over)
                             leftover_mask = ~final_merged.index.isin(used_indices)
@@ -368,7 +379,7 @@ if uploaded_file:
                             if not not_meeting_df.empty:
                                 st.subheader(f"⚠️ Not Meeting Requirements ({len(not_meeting_df['ID'].dropna().unique())} Tickets)")
                                 st.write("These tickets do not match standard automated scenarios. Please review them manually.")
-                                st.dataframe(not_meeting_df, use_container_width=True)
+                                st.dataframe(not_meeting_df)
                                 
                                 csv_data = not_meeting_df.to_csv(index=False).encode('utf-8')
                                 st.download_button(
@@ -393,12 +404,13 @@ if uploaded_file:
                                     st.write("📋 **Copy Zendesk Search Query:**")
                                     st.code(" ".join([f'ticket_id:"{tid}"' for tid in unique_tickets]), language='text')
                                     
-                                    st.write("👀 **Preview:**")
-                                    st.dataframe(df_subset, use_container_width=True)
+                                    st.write("👀 **Preview (First 10 Rows):**")
+                                    # SAFETY NET 4: Cap browser rendering to 10 rows to stop Google Chrome crashing
+                                    st.dataframe(df_subset.head(10))
                                         
                                     csv_data = df_subset.to_csv(index=False).encode('utf-8')
                                     clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
-                                    st.download_button(label=f"📥 Download CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
+                                    st.download_button(label=f"📥 Download Full CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
 
                             # Render scenarios 1-7 using the expander format
                             render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX")
@@ -417,3 +429,4 @@ if uploaded_file:
                                     
                             render_scenario("Rejected Application", reject_df, "Rejected_Application")
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email")
+                            render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue")
