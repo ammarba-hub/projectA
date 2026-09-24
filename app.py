@@ -111,8 +111,14 @@ if uploaded_file:
                     cols_to_pull = list(set(selected_cols + ['leadId']))
                     matched_df = df[df['leadId'].isin(search_list)][cols_to_pull]
                     merged_results = pd.merge(search_df, matched_df, on='leadId', how='left')
+                    
+                    # TAB 1 MEMORY FIX: Temporarily unlock categories back to strings so we can insert "No match found"
                     cols_to_fill = [col for col in selected_cols if col != 'leadId']
-                    merged_results[cols_to_fill] = merged_results[cols_to_fill].fillna('No match found')
+                    for c in cols_to_fill:
+                        if merged_results[c].dtype.name == 'category':
+                            merged_results[c] = merged_results[c].astype(str)
+                        merged_results[c] = merged_results[c].fillna('No match found')
+                        
                     final_results = merged_results[selected_cols]
                     
                     st.write(f"✅ Processed {len(search_list):,} searched IDs!")
