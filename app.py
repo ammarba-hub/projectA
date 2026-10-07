@@ -389,7 +389,6 @@ if uploaded_file:
                             del mask5
 
                             # SPECIFIC FULFILLED/RECEIVED SCENARIOS FIRST
-                            # This ensures specific tickets are pulled out before the general FLT Completed catch-all runs.
                             mask8 = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Fulfillment Issues') & (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec & is_reward_360
                             resend_df = claim_rows(mask8)
                             del mask8
@@ -408,7 +407,6 @@ if uploaded_file:
                             del mask10
 
                             # GENERAL FULFILLED/RECEIVED CATCH-ALL LAST
-                            # Grabs whatever is leftover that wasn't matched to Resend/Evoucher/AGC
                             mask6 = is_fulfilled_rec
                             flt_comp_df = claim_rows(mask6)
                             del mask6
@@ -432,6 +430,21 @@ if uploaded_file:
                             if not not_meeting_df.empty:
                                 st.subheader(f"⚠️ Not Meeting Requirements ({len(not_meeting_df['ID'].dropna().unique())} Tickets)")
                                 st.write("These tickets do not match standard automated scenarios. Please review them manually.")
+                                
+                                # Generate the transparent Reason for Exclusion column
+                                conditions = [
+                                    not_meeting_df['operationStatus'] == 'No match found',
+                                    ~not_meeting_df['operationStatus'].isin(['PENDING', 'NONE', 'APPROVED', 'SPECIAL_APPROVAL', 'DECLINED', 'FULFILLED', 'RECEIVED', 'No match found']),
+                                    not_meeting_df['operationStatus'].isin(['FULFILLED', 'RECEIVED'])
+                                ]
+                                choices = [
+                                    "Ticket Leads ID not found in Master CSV",
+                                    "Unmapped operationStatus (" + not_meeting_df['operationStatus'].astype(str) + ")",
+                                    "Fulfilled/Received but mismatched Contact Reason, Issue Type, or Vendor"
+                                ]
+                                reasons = np.select(conditions, choices, default="Did not match any scenario criteria")
+                                not_meeting_df.insert(0, 'Reason for Exclusion', reasons)
+                                
                                 st.dataframe(not_meeting_df, use_container_width=True)
                                 
                                 csv_data = not_meeting_df.to_csv(index=False).encode('utf-8')
@@ -446,14 +459,17 @@ if uploaded_file:
                                 
                             st.write("Expand a category below to copy the Zendesk query or download the CSV file for bulk solving.")
 
-                            # Helper function to generate UI for buckets 1-7 with full columns
-                            def render_scenario(title, df_subset, file_key):
+                            # Helper function to generate UI for buckets 1-7 with full columns and conditions
+                            def render_scenario(title, df_subset, file_key, criteria_text=""):
                                 if df_subset.empty:
                                     return
                                     
                                 unique_tickets = df_subset['ID'].dropna().unique()
                                 
                                 with st.expander(f"{title} ({len(unique_tickets)} Tickets)"):
+                                    if criteria_text:
+                                        st.markdown(f"**Criteria Met:**\n{criteria_text}")
+                                        
                                     st.write("📋 **Copy Zendesk Search Query:**")
                                     st.code(" ".join([f'ticket_id:"{tid}"' for tid in unique_tickets]), language='text')
                                     
@@ -465,22 +481,22 @@ if uploaded_file:
                                     clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
                                     st.download_button(label=f"📥 Download Full CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
 
-                            # Render scenarios using the expander format
-                            render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX")
-                            render_scenario("ELT Within SLA - Others", elt_within_others_df, "ELT_Within_SLA_Others")
-                            render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA")
+                            # Render scenarios using the expander format and pass the specific criteria
+                            render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX", "- `operationStatus` is NONE or PENDING\n- `SLA Check` is Blank\n- `referenceId.ns` is AMEX")
+                            render_scenario("ELT Within SLA - Others", elt_within_others_df, "ELT_Within_SLA_Others", "- `operationStatus` is NONE or PENDING\n- `SLA Check` is Blank\n- `referenceId.ns` is NOT AMEX")
+                            render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA", "- `operationStatus` is NONE or PENDING\n- `SLA Check` is 'ELT Passed SLA'")
                             
                             if not flt_within_df.empty:
                                 for provider, group_df in flt_within_df.groupby('referenceId.ns'):
-                                    render_scenario(f"FLT Within SLA - {provider}", group_df, f"FLT_Within_SLA_{provider}")
+                                    render_scenario(f"FLT Within SLA - {provider}", group_df, f"FLT_Within_SLA_{provider}", "- `operationStatus` is APPROVED or SPECIAL_APPROVAL\n- `SLA Check` is Blank")
                                     
-                            render_scenario("FLT Past SLA", flt_past_df, "FLT_Past_SLA")
+                            render_scenario("FLT Past SLA", flt_past_df, "FLT_Past_SLA", "- `operationStatus` is APPROVED or SPECIAL_APPROVAL\n- `SLA Check` is 'FLT Passed SLA'")
                             
                             if not flt_comp_df.empty:
                                 for date_val, group_df in flt_comp_df.groupby('redemptionEmailSentDate'):
-                                    render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}")
+                                    render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}", "- `operationStatus` is FULFILLED or RECEIVED\n- Not claimed by specific Fulfillment or Reward issue flows")
                                     
-                            render_scenario("Rejected Application", reject_df, "Rejected_Application")
-                            render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email")
-                            render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue")
-                            render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App")
+                            render_scenario("Rejected Application", reject_df, "Rejected_Application", "- `operationStatus` is DECLINED")
+                            render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email", "- `Contact Reason` is 'Fulfillment Issues'\n- `Fulfillment Issues` is 'Resend Redemption Email/Link (Digital)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
+                            render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'Voucher Redemption Issue'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
+                            render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'AGC Misuse (Apple App)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'MHG'")
