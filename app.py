@@ -339,4 +339,188 @@ if uploaded_file:
                                 if indices_to_drop:
                                     final_merged = final_merged.drop(indices_to_drop)
                                 
-                                st.success(f"✅ Conflicts resolved! {
+                                st.success(f"✅ Conflicts resolved! {len(indices_to_drop)} entries were removed. See the categorized scenarios below.")
+
+                            st.write("### 🗂️ Bulk Solving Scenarios")
+                            
+                            # Track which indices have been bucketed
+                            used_indices = set()
+
+                            def claim_rows(mask):
+                                df_subset = final_merged[mask & (~final_merged.index.isin(used_indices))].copy()
+                                used_indices.update(df_subset.index)
+                                return df_subset
+
+                            # Ensure column exists before checking
+                            if 'Fulfillment Issues' not in final_merged.columns:
+                                final_merged['Fulfillment Issues'] = ''
+                            if 'Reward Issues' not in final_merged.columns:
+                                final_merged['Reward Issues'] = ''
+                            if 'Contact Reason' not in final_merged.columns:
+                                final_merged['Contact Reason'] = ''
+                            
+                            final_merged['operationStatus'] = final_merged['operationStatus'].fillna('')
+                            
+                            # MEMORY FIX: Pre-calculate common string/boolean checks ONCE 
+                            is_fulfilled_rec = final_merged['operationStatus'].isin(['FULFILLED', 'RECEIVED'])
+                            is_pending_none = final_merged['operationStatus'].isin(['NONE', 'PENDING'])
+                            is_appr_special = final_merged['operationStatus'].isin(['APPROVED', 'SPECIAL_APPROVAL'])
+                            is_reward_360 = final_merged['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False)
+                            is_mhg = final_merged['vendorName'].fillna('').astype(str).str.contains('MHG', case=True, na=False)
+                            
+                            # ISOLATE INTENTS FOR INTERCEPTION
+                            intent_resend = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Fulfillment Issues') & (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)')
+                            intent_evoucher = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (final_merged['Reward Issues'] == 'Voucher Redemption Issue')
+                            intent_agc = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (final_merged['Reward Issues'] == 'AGC Misuse (Apple App)')
+                            has_specific_intent = intent_resend | intent_evoucher | intent_agc
+
+                            # 1. ELT Within SLA - Split by AMEX and Others
+                            mask1 = is_pending_none & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') == 'AMEX')
+                            elt_within_amex_df = claim_rows(mask1)
+                            del mask1
+                            
+                            mask2 = is_pending_none & (final_merged['SLA Check'] == '') & (final_merged['referenceId.ns'].fillna('') != 'AMEX')
+                            elt_within_others_df = claim_rows(mask2)
+                            del mask2
+
+                            mask3 = is_pending_none & (final_merged['SLA Check'] == 'ELT Passed SLA')
+                            elt_past_df = claim_rows(mask3)
+                            del mask3
+
+                            mask4 = is_appr_special & (final_merged['SLA Check'] == '')
+                            flt_within_df = claim_rows(mask4)
+                            del mask4
+
+                            mask5 = is_appr_special & (final_merged['SLA Check'] == 'FLT Passed SLA')
+                            flt_past_df = claim_rows(mask5)
+                            del mask5
+
+                            # SPECIFIC FULFILLED/RECEIVED SCENARIOS FIRST
+                            mask8 = intent_resend & is_fulfilled_rec & is_reward_360
+                            resend_df = claim_rows(mask8)
+                            del mask8
+                            
+                            mask9 = intent_evoucher & is_fulfilled_rec & is_reward_360
+                            evoucher_df = claim_rows(mask9)
+                            del mask9
+                            
+                            mask10 = intent_agc & is_fulfilled_rec & is_mhg
+                            agc_misuse_df = claim_rows(mask10)
+                            del mask10
+
+                            # GENERAL FULFILLED/RECEIVED CATCH-ALL LAST
+                            # Intercept failed intents here so they fall through to 'Not Meeting Requirements'
+                            mask6 = is_fulfilled_rec & ~has_specific_intent
+                            flt_comp_df = claim_rows(mask6)
+                            del mask6
+
+                            mask7 = final_merged['operationStatus'] == 'DECLINED'
+                            reject_df = claim_rows(mask7)
+                            del mask7
+
+                            # Free up the temporary common checks
+                            del is_fulfilled_rec, is_pending_none, is_appr_special, is_reward_360, is_mhg
+                            del intent_resend, intent_evoucher, intent_agc, has_specific_intent
+                            gc.collect()
+
+                            # 8. Not meeting the requirements (Everything else left over)
+                            leftover_mask = ~final_merged.index.isin(used_indices)
+                            not_meeting_df = claim_rows(leftover_mask)
+                            del leftover_mask
+
+                            # --- UI RENDERING START ---
+
+                            # Render "Not Meeting Requirements" fixed at the very top
+                            if not not_meeting_df.empty:
+                                st.subheader(f"⚠️ Not Meeting Requirements ({len(not_meeting_df['ID'].dropna().unique())} Tickets)")
+                                st.write("These tickets do not match standard automated scenarios. Please review them manually.")
+                                
+                                # Dynamic Reason for Exclusion generation for failed intents
+                                nm_intent_resend = (not_meeting_df['Contact Reason'].fillna('').astype(str).str.strip() == 'Fulfillment Issues') & (not_meeting_df['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)')
+                                nm_intent_evoucher = (not_meeting_df['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (not_meeting_df['Reward Issues'] == 'Voucher Redemption Issue')
+                                nm_intent_agc = (not_meeting_df['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (not_meeting_df['Reward Issues'] == 'AGC Misuse (Apple App)')
+                                
+                                conditions = [
+                                    not_meeting_df['operationStatus'] == 'No match found',
+                                    
+                                    nm_intent_agc & ~not_meeting_df['operationStatus'].isin(['FULFILLED', 'RECEIVED']),
+                                    nm_intent_agc & ~not_meeting_df['vendorName'].fillna('').astype(str).str.contains('MHG', case=True, na=False),
+                                    
+                                    nm_intent_resend & ~not_meeting_df['operationStatus'].isin(['FULFILLED', 'RECEIVED']),
+                                    nm_intent_resend & ~not_meeting_df['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False),
+                                    
+                                    nm_intent_evoucher & ~not_meeting_df['operationStatus'].isin(['FULFILLED', 'RECEIVED']),
+                                    nm_intent_evoucher & ~not_meeting_df['vendorName'].fillna('').astype(str).str.contains('Reward 360', case=False, na=False),
+                                    
+                                    ~not_meeting_df['operationStatus'].isin(['PENDING', 'NONE', 'APPROVED', 'SPECIAL_APPROVAL', 'DECLINED', 'FULFILLED', 'RECEIVED', 'No match found']),
+                                    not_meeting_df['operationStatus'].isin(['FULFILLED', 'RECEIVED'])
+                                ]
+                                choices = [
+                                    "Ticket Leads ID not found in Master CSV",
+                                    "Failed AGC Misuse check: operationStatus is not FULFILLED/RECEIVED",
+                                    "Failed AGC Misuse check: Vendor does not contain 'MHG'",
+                                    "Failed Resend Redemption Email check: operationStatus is not FULFILLED/RECEIVED",
+                                    "Failed Resend Redemption Email check: Vendor does not contain 'Reward 360'",
+                                    "Failed E-voucher check: operationStatus is not FULFILLED/RECEIVED",
+                                    "Failed E-voucher check: Vendor does not contain 'Reward 360'",
+                                    "Unmapped operationStatus (" + not_meeting_df['operationStatus'].astype(str) + ")",
+                                    "Fulfilled/Received but did not meet any specific scenario criteria"
+                                ]
+                                reasons = np.select(conditions, choices, default="Did not match any scenario criteria")
+                                not_meeting_df.insert(0, 'Reason for Exclusion', reasons)
+                                
+                                st.dataframe(not_meeting_df, use_container_width=True)
+                                
+                                csv_data = not_meeting_df.to_csv(index=False).encode('utf-8')
+                                st.download_button(
+                                    label="📥 Download CSV", 
+                                    data=csv_data, 
+                                    file_name="Not_Meeting_Requirements.csv", 
+                                    mime="text/csv", 
+                                    key="dl_Not_Meeting"
+                                )
+                                st.divider()
+                                
+                            st.write("Expand a category below to copy the Zendesk query or download the CSV file for bulk solving.")
+
+                            # Helper function to generate UI for buckets 1-7 with full columns and conditions
+                            def render_scenario(title, df_subset, file_key, criteria_text=""):
+                                if df_subset.empty:
+                                    return
+                                    
+                                unique_tickets = df_subset['ID'].dropna().unique()
+                                
+                                with st.expander(f"{title} ({len(unique_tickets)} Tickets)"):
+                                    if criteria_text:
+                                        st.markdown(f"**Criteria Met:**\n{criteria_text}")
+                                        
+                                    st.write("📋 **Copy Zendesk Search Query:**")
+                                    st.code(" ".join([f'ticket_id:"{tid}"' for tid in unique_tickets]), language='text')
+                                    
+                                    st.write("👀 **Preview (First 10 Rows):**")
+                                    # SAFETY NET 4: Cap browser rendering to 10 rows to stop Google Chrome crashing
+                                    st.dataframe(df_subset.head(10))
+                                        
+                                    csv_data = df_subset.to_csv(index=False).encode('utf-8')
+                                    clean_filename = file_key.replace(" ", "_").replace("/", "_") + ".csv"
+                                    st.download_button(label=f"📥 Download Full CSV", data=csv_data, file_name=clean_filename, mime="text/csv", key=f"dl_{file_key}")
+
+                            # Render scenarios using the expander format and pass the specific criteria
+                            render_scenario("ELT Within SLA - AMEX", elt_within_amex_df, "ELT_Within_SLA_AMEX", "- `operationStatus` is NONE or PENDING\n- `SLA Check` is Blank\n- `referenceId.ns` is AMEX")
+                            render_scenario("ELT Within SLA - Others", elt_within_others_df, "ELT_Within_SLA_Others", "- `operationStatus` is NONE or PENDING\n- `SLA Check` is Blank\n- `referenceId.ns` is NOT AMEX")
+                            render_scenario("ELT Past SLA", elt_past_df, "ELT_Past_SLA", "- `operationStatus` is NONE or PENDING\n- `SLA Check` is 'ELT Passed SLA'")
+                            
+                            if not flt_within_df.empty:
+                                for provider, group_df in flt_within_df.groupby('referenceId.ns'):
+                                    render_scenario(f"FLT Within SLA - {provider}", group_df, f"FLT_Within_SLA_{provider}", "- `operationStatus` is APPROVED or SPECIAL_APPROVAL\n- `SLA Check` is Blank")
+                                    
+                            render_scenario("FLT Past SLA", flt_past_df, "FLT_Past_SLA", "- `operationStatus` is APPROVED or SPECIAL_APPROVAL\n- `SLA Check` is 'FLT Passed SLA'")
+                            
+                            if not flt_comp_df.empty:
+                                for date_val, group_df in flt_comp_df.groupby('redemptionEmailSentDate'):
+                                    render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}", "- `operationStatus` is FULFILLED or RECEIVED\n- Not claimed by specific Fulfillment or Reward issue flows")
+                                    
+                            render_scenario("Rejected Application", reject_df, "Rejected_Application", "- `operationStatus` is DECLINED")
+                            render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email", "- `Contact Reason` is 'Fulfillment Issues'\n- `Fulfillment Issues` is 'Resend Redemption Email/Link (Digital)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
+                            render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'Voucher Redemption Issue'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
+                            render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'AGC Misuse (Apple App)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'MHG'")
