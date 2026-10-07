@@ -404,6 +404,16 @@ if uploaded_file:
                             mask9 = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & is_fulfilled_rec & is_reward_360
                             evoucher_df = claim_rows(mask9)
                             del mask9
+                            
+                            # NEW SCENARIO: AGC Misuse (Apple App)
+                            mask10 = (
+                                (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & 
+                                (final_merged['Reward Issues'] == 'AGC Misuse (Apple App)') & 
+                                is_fulfilled_rec & 
+                                (final_merged['vendorName'].fillna('').astype(str).str.contains('MHG', case=True, na=False))
+                            )
+                            agc_misuse_df = claim_rows(mask10)
+                            del mask10
 
                             # Free up the temporary common checks
                             del is_fulfilled_rec, is_pending_none, is_appr_special, is_reward_360
@@ -471,3 +481,4 @@ if uploaded_file:
                             render_scenario("Rejected Application", reject_df, "Rejected_Application")
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email")
                             render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue")
+                            render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App")
