@@ -388,24 +388,16 @@ if uploaded_file:
                             flt_past_df = claim_rows(mask5)
                             del mask5
 
-                            mask6 = (final_merged['Fulfillment Issues'] != 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec
-                            flt_comp_df = claim_rows(mask6)
-                            del mask6
-
-                            mask7 = final_merged['operationStatus'] == 'DECLINED'
-                            reject_df = claim_rows(mask7)
-                            del mask7
-
+                            # SPECIFIC FULFILLED/RECEIVED SCENARIOS FIRST
+                            # This ensures specific tickets are pulled out before the general FLT Completed catch-all runs.
                             mask8 = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Fulfillment Issues') & (final_merged['Fulfillment Issues'] == 'Resend Redemption Email/Link (Digital)') & is_fulfilled_rec & is_reward_360
                             resend_df = claim_rows(mask8)
                             del mask8
                             
-                            # SAFETY NET 3: Force string cast before .str.contains to handle missing/bad text gracefully
                             mask9 = (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & (final_merged['Reward Issues'] == 'Voucher Redemption Issue') & is_fulfilled_rec & is_reward_360
                             evoucher_df = claim_rows(mask9)
                             del mask9
                             
-                            # NEW SCENARIO: AGC Misuse (Apple App)
                             mask10 = (
                                 (final_merged['Contact Reason'].fillna('').astype(str).str.strip() == 'Reward Issues') & 
                                 (final_merged['Reward Issues'] == 'AGC Misuse (Apple App)') & 
@@ -414,6 +406,16 @@ if uploaded_file:
                             )
                             agc_misuse_df = claim_rows(mask10)
                             del mask10
+
+                            # GENERAL FULFILLED/RECEIVED CATCH-ALL LAST
+                            # Grabs whatever is leftover that wasn't matched to Resend/Evoucher/AGC
+                            mask6 = is_fulfilled_rec
+                            flt_comp_df = claim_rows(mask6)
+                            del mask6
+
+                            mask7 = final_merged['operationStatus'] == 'DECLINED'
+                            reject_df = claim_rows(mask7)
+                            del mask7
 
                             # Free up the temporary common checks
                             del is_fulfilled_rec, is_pending_none, is_appr_special, is_reward_360
