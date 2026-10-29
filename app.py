@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import gc
+import re
 
 # Configure the web page
 st.set_page_config(page_title="Project Alyson", layout="wide")
@@ -237,7 +238,9 @@ if uploaded_file:
                         master_cols_to_pull = [
                             'referenceId.ns', 'application.entry.status', 'operationStatus', 
                             'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
-                            'offerName', 'providerFeedbackDate', 'SLA Check'
+                            'offerName', 'providerFeedbackDate', 'SLA Check',
+                            'notes', 'application.entry.attributes.notes', 
+                            'application.entry.attributes.remarks', 'eVoucherExpiry'
                         ]
                         
                         actual_master_cols = [c for c in master_cols_to_pull if c in df.columns]
@@ -414,9 +417,23 @@ if uploaded_file:
                             flt_comp_df = claim_rows(mask6)
                             del mask6
 
+                            # REJECTED APPLICATION LOGIC WITH DYNAMIC REASONS
                             mask7 = final_merged['operationStatus'] == 'DECLINED'
                             reject_df = claim_rows(mask7)
                             del mask7
+                            
+                            if not reject_df.empty:
+                                reason_cols = ['notes', 'application.entry.attributes.notes', 'application.entry.attributes.remarks', 'eVoucherExpiry']
+                                available_cols = [c for c in reason_cols if c in reject_df.columns]
+                                
+                                def extract_rejection_reason(row):
+                                    for col in available_cols:
+                                        val = str(row.get(col, '')).strip()
+                                        if val and val.lower() not in ['nan', 'none', 'no match found']:
+                                            return val
+                                    return "No rejection reason provided by provider"
+                                    
+                                reject_df['Rejection Reason'] = reject_df.apply(extract_rejection_reason, axis=1)
 
                             # Free up the temporary common checks
                             del is_fulfilled_rec, is_pending_none, is_appr_special, is_reward_360, is_mhg
@@ -520,7 +537,11 @@ if uploaded_file:
                                 for date_val, group_df in flt_comp_df.groupby('redemptionEmailSentDate'):
                                     render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}", "- `operationStatus` is FULFILLED or RECEIVED\n- Not claimed by specific Fulfillment or Reward issue flows")
                                     
-                            render_scenario("Rejected Application", reject_df, "Rejected_Application", "- `operationStatus` is DECLINED")
+                            if not reject_df.empty:
+                                for reason, group_df in reject_df.groupby('Rejection Reason'):
+                                    safe_reason = re.sub(r'[^A-Za-z0-9]', '_', str(reason)[:30])
+                                    render_scenario(f"Rejected Application - {reason}", group_df, f"Rejected_Application_{safe_reason}", f"- `operationStatus` is DECLINED\n- Rejection Reason: {reason}")
+                            
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email", "- `Contact Reason` is 'Fulfillment Issues'\n- `Fulfillment Issues` is 'Resend Redemption Email/Link (Digital)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
                             render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'Voucher Redemption Issue'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
                             render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'AGC Misuse (Apple App)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'MHG'")
