@@ -538,8 +538,8 @@ if uploaded_file:
                                     render_scenario(f"FLT Completed - {date_val}", group_df, f"FLT_Completed_{date_val}", "- `operationStatus` is FULFILLED or RECEIVED\n- Not claimed by specific Fulfillment or Reward issue flows")
                                     
                             if not reject_df.empty:
-                                for reason, group_df in reject_df.groupby('Rejection Reason'):
-                                    safe_reason = re.sub(r'[^A-Za-z0-9]', '_', str(reason)[:30])
+                                for i, (reason, group_df) in enumerate(reject_df.groupby('Rejection Reason')):
+                                    safe_reason = f"{i}_" + re.sub(r'[^A-Za-z0-9]', '_', str(reason)[:30])
                                     render_scenario(f"Rejected Application - {reason}", group_df, f"Rejected_Application_{safe_reason}", f"- `operationStatus` is DECLINED\n- Rejection Reason: {reason}")
                             
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email", "- `Contact Reason` is 'Fulfillment Issues'\n- `Fulfillment Issues` is 'Resend Redemption Email/Link (Digital)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
