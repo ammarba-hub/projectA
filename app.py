@@ -245,44 +245,4 @@ if uploaded_file:
                         
                         actual_master_cols = [c for c in master_cols_to_pull if c in df.columns]
                         
-                        # SAFETY NET 1: Drop duplicates in the master file to prevent Cartesian row-multiplication explosion
-                        master_subset = df[['leadId'] + actual_master_cols].drop_duplicates(subset=['leadId'], keep='last')
-                        
-                        merged = pd.merge(valid_df, master_subset, left_on='Leads ID', right_on='leadId', how='left')
-                        
-                        for c in actual_master_cols:
-                            if merged[c].dtype.name == 'category':
-                                merged[c] = merged[c].astype(str)
-                            merged[c] = merged[c].fillna('No match found')
-                            
-                        if 'leadId' in merged.columns:
-                            merged = merged.drop(columns=['leadId'])
-                        merged = merged.reset_index(drop=True)
-                            
-                        # Auto-Resolve
-                        mismatch_indices = []
-                        known_resolutions = {
-                            ('citi', 'citibank'): 'Citibank',
-                            ('uaf', 'ua'): 'UA',
-                            ('tiger', 'tiger brokers'): 'Tiger Brokers',
-                            ('longbrg', 'longbridge'): 'Longbridge',
-                            ('htsc', 'huatai'): 'Huatai',
-                            ('hase', 'hangseng'): 'HangSeng',
-                            ('dahsing', 'dah sing'): 'Dah Sing',
-                            ('citic', 'cncbi'): 'HangSeng'
-                        }
-                        
-                        for idx, row in merged.iterrows():
-                            provider_raw = str(row.get('Provider', '')).strip()
-                            ref_raw = str(row.get('referenceId.ns', '')).strip()
-                            provider = provider_raw.lower()
-                            ref = ref_raw.lower()
-                            
-                            if provider != ref and ref != 'no match found' and ref != 'nan':
-                                if provider == '':
-                                    merged.at[idx, 'Provider'] = ref_raw
-                                elif (ref, provider) in known_resolutions:
-                                    resolved_val = known_resolutions[(ref, provider)]
-                                    merged.at[idx, 'Provider'] = resolved_val
-                                    merged.at[idx, 'referenceId.ns'] = resolved_val
-                                else:
+                        # SAFETY NET 1: Drop duplicates in the master file to prevent Cartesian
