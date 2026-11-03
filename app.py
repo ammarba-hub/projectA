@@ -563,4 +563,4 @@ if uploaded_file:
                             
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email", "- `Contact Reason` is 'Fulfillment Issues'\n- `Fulfillment Issues` is 'Resend Redemption Email/Link (Digital)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
                             render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'Voucher Redemption Issue'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
-                            render_scenario("AGC
+                            render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'AGC Misuse (Apple App)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'MHG'")
