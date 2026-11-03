@@ -240,7 +240,7 @@ if uploaded_file:
                             'vendorName', 'poReference', 'redemptionEmailSentDate', 'batchNumber', 
                             'offerName', 'providerFeedbackDate', 'SLA Check',
                             'notes', 'application.entry.attributes.notes', 
-                            'application.entry.attributes.remarks', 'eVoucherExpiry'
+                            'application.entry.attributes.remarks', 'eVoucherExpiry', 'referenceId.arn'
                         ]
                         
                         actual_master_cols = [c for c in master_cols_to_pull if c in df.columns]
@@ -423,14 +423,21 @@ if uploaded_file:
                             del mask7
                             
                             if not reject_df.empty:
-                                reason_cols = ['notes', 'application.entry.attributes.notes', 'application.entry.attributes.remarks', 'eVoucherExpiry']
-                                available_cols = [c for c in reason_cols if c in reject_df.columns]
-                                
                                 def extract_rejection_reason(row):
-                                    for col in available_cols:
-                                        val = str(row.get(col, '')).strip()
-                                        if val and val.lower() not in ['nan', 'none', 'no match found']:
-                                            return val
+                                    arn_val = str(row.get('referenceId.arn', '')).strip()
+                                    has_arn = arn_val and arn_val.lower() not in ['nan', 'none', 'no match found']
+                                    
+                                    if has_arn:
+                                        check_cols = ['application.entry.attributes.notes', 'application.entry.attributes.remarks', 'notes']
+                                    else:
+                                        check_cols = ['notes', 'eVoucherExpiry']
+                                        
+                                    for col in check_cols:
+                                        if col in row.index:
+                                            val = str(row.get(col, '')).strip()
+                                            if val and val.lower() not in ['nan', 'none', 'no match found']:
+                                                return val
+                                                
                                     return "No rejection reason provided by provider"
                                     
                                 reject_df['Rejection Reason'] = reject_df.apply(extract_rejection_reason, axis=1)
