@@ -547,8 +547,20 @@ if uploaded_file:
                             if not reject_df.empty:
                                 for i, (reason, group_df) in enumerate(reject_df.groupby('Rejection Reason')):
                                     safe_reason = f"{i}_" + re.sub(r'[^A-Za-z0-9]', '_', str(reason)[:30])
-                                    render_scenario(f"Rejected Application - {reason}", group_df, f"Rejected_Application_{safe_reason}", f"- `operationStatus` is DECLINED\n- Rejection Reason: {reason}")
+                                    
+                                    criteria_lines = ["- `operationStatus` is DECLINED", "- **Potential Reasons:**"]
+                                    for col in ['application.entry.attributes.notes', 'application.entry.attributes.remarks', 'notes', 'eVoucherExpiry']:
+                                        if col in group_df.columns:
+                                            vals = [v for v in group_df[col].dropna().astype(str).str.strip().unique() if v.lower() not in ['nan', 'none', '', 'no match found']]
+                                            if vals:
+                                                criteria_lines.append(f"  - `{col}`: {', '.join(vals)}")
+                                                
+                                    if len(criteria_lines) == 2:
+                                        criteria_lines.append("  - No rejection reason provided by provider")
+                                        
+                                    criteria_text = "\n".join(criteria_lines)
+                                    render_scenario(f"Rejected Application - {reason}", group_df, f"Rejected_Application_{safe_reason}", criteria_text)
                             
                             render_scenario("Resend Redemption Email", resend_df, "Resend_Redemption_Email", "- `Contact Reason` is 'Fulfillment Issues'\n- `Fulfillment Issues` is 'Resend Redemption Email/Link (Digital)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
                             render_scenario("E-voucher redemption issue (R360)", evoucher_df, "Evoucher_Redemption_Issue", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'Voucher Redemption Issue'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'Reward 360'")
-                            render_scenario("AGC Misuse (Apple App)", agc_misuse_df, "AGC_Misuse_Apple_App", "- `Contact Reason` is 'Reward Issues'\n- `Reward Issues` is 'AGC Misuse (Apple App)'\n- `operationStatus` is FULFILLED or RECEIVED\n- `vendorName` contains 'MHG'")
+                            render_scenario("AGC
