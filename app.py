@@ -196,11 +196,11 @@ if uploaded_file:
 
         # --- TAB 3: BULK SOLVING FLOW ---
         with tab3:
-            st.write("Upload Support Team View export to cross-reference them with the Tracked Rewards Export.")
+            st.write("Upload Zendesk Tickets View export to cross-reference them with the Tracked Rewards Export.")
             
             st.info("""
 **📝 Required Columns for Zendesk Export:**
-`ID / Ticket ID`, `Ticket status`, `Requested`, `Requester updated`, `Leads ID`, `Provider`, `Contact Reason`, `Application Issues`, `Fulfillment Issues`, `Reward Issues`, `Language`
+`Ticket ID`, `Ticket status`, `Requested`, `Requester updated`, `Leads ID`, `Provider`, `Contact Reason`, `Application Issues`, `Fulfillment Issues`, `Reward Issues`, `Language`
             """)
             
             zd_file = st.file_uploader("📁 Step 2: Upload Support Team View export in CSV format", type=["csv"], key="zd_upload")
